@@ -17,7 +17,7 @@
     function begin(e,kind,el) {
       if(!usable(e) || [...pointers.values()].some(p=>p.kind===kind))return false;
       e.preventDefault();
-      pointers.set(e.pointerId,{kind,el,x:e.clientX,y:e.clientY});
+      pointers.set(e.pointerId,{kind,el,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,time:e.timeStamp,dragged:false});
       el.setPointerCapture(e.pointerId);
       return true;
     }
@@ -32,7 +32,9 @@
     }
     stick.addEventListener('pointerdown',e=>{if(begin(e,'move',stick))moveStick(e);});
     const canvas=$('bevy-canvas');
-    canvas.addEventListener('pointerdown',e=>begin(e,'look',canvas));
+    // A short tap fires on release; dragging only looks. A second finger can
+    // tap the view while the first keeps aiming, independently of the stick.
+    canvas.addEventListener('pointerdown',e=>begin(e,[...pointers.values()].some(p=>p.kind==='look')?'tap':'look',canvas));
     for(const [id,kind] of [['touch-fire','fire'],['touch-defuse','defuse']]) {
       const el=$(id);
       el.addEventListener('pointerdown',e=>{
@@ -45,6 +47,7 @@
       const p=pointers.get(e.pointerId);if(!p)return;
       if(!active()){reset();return;}
       e.preventDefault();
+      if(Math.hypot(e.clientX-p.startX,e.clientY-p.startY)>12)p.dragged=true;
       if(p.kind==='move')moveStick(e);
       if(p.kind==='look' || p.kind==='fire') {
         lookX+=(e.clientX-p.x)*1.7;lookY+=(e.clientY-p.y)*1.7;
@@ -53,6 +56,8 @@
     },{passive:false});
     const end=e=>{
       const p=pointers.get(e.pointerId);if(!p)return;pointers.delete(e.pointerId);
+      if((p.kind==='look'||p.kind==='tap') && e.type==='pointerup' && active() && !p.dragged &&
+          Math.hypot(e.clientX-p.startX,e.clientY-p.startY)<=12 && e.timeStamp-p.time<=280)firePressed=true;
       if(p.kind==='move'){forward=strafe=0;knob.style.transform='translate(0px,0px)';}
       if(p.kind==='fire')fire=false;
       if(p.kind==='defuse')defuse=false;
@@ -64,7 +69,9 @@
       $(id).addEventListener('click',()=>{if(active())action();});
     window.addEventListener('resize',reset);
     return {reset,read(){
-      const value={forward,strafe,lookX,lookY,fire,firePressed,aim,crouch,defuse};
+      // Hold for one engine input packet too: automatic weapons use held fire,
+      // semi-automatic weapons use the press edge. Never leave a tap held down.
+      const value={forward,strafe,lookX,lookY,fire:fire||firePressed,firePressed,aim,crouch,defuse};
       lookX=lookY=0;firePressed=false;return value;
     }};
   };

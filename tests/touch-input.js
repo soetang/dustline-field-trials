@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function target(){const events={};return {
   addEventListener(k,f){(events[k]||=[]).push(f);},
-  emit(type,values={}){const e={type,pointerType:'touch',preventDefault(){},...values};for(const fn of events[type]||[])fn(e);},
+  emit(type,values={}){const e={type,pointerType:'touch',timeStamp:0,preventDefault(){},...values};for(const fn of events[type]||[])fn(e);},
   style:{},setAttribute(k,v){this[k]=v;},getBoundingClientRect(){return {left:0,top:0,width:100,height:100};},
   setPointerCapture(){},hasPointerCapture(){return false;},releasePointerCapture(){},
 };}
@@ -34,4 +34,20 @@ nodes.get('touch-pause').emit('click');state=controls.read();
 assert.equal(state.forward,0);assert.ok(!state.fire && !state.aim && !state.crouch && !state.defuse);
 emit('touch-fire','pointerdown',6);move(6,100,100);assert.equal(controls.read().fire,false,'Paused touch must be ignored');
 active=true;emit('touch-fire','pointerdown',7);window.emit('resize');assert.equal(controls.read().fire,false,'Rotation must not leave fire held');
+emit('bevy-canvas','pointerdown',8,200,100);
+document.emit('pointerup',{pointerId:8,clientX:204,clientY:102,timeStamp:140});
+state=controls.read();assert.ok(state.firePressed && state.fire,'Tap emits an automatic and semi-auto fire pulse');
+state=controls.read();assert.ok(!state.firePressed && !state.fire,'Tap pulse drains once');
+emit('bevy-canvas','pointerdown',9,200,100);move(9,240,100);move(9,200,100);
+document.emit('pointerup',{pointerId:9,clientX:200,clientY:100,timeStamp:100});assert.equal(controls.read().fire,false,'Returning a swipe to its start must not fire');
+emit('bevy-canvas','pointerdown',10,200,100);
+document.emit('pointerup',{pointerId:10,clientX:200,clientY:100,timeStamp:500});assert.equal(controls.read().fire,false,'Long stationary touch must not fire on release');
+emit('bevy-canvas','pointerdown',11,200,100);
+document.emit('pointercancel',{pointerId:11,clientX:200,clientY:100,timeStamp:100});assert.equal(controls.read().fire,false,'Cancelled tap must not fire');
+emit('touch-move','pointerdown',12,50,20);emit('bevy-canvas','pointerdown',13,200,100);move(13,230,100);
+emit('bevy-canvas','pointerdown',14,300,100);
+document.emit('pointerup',{pointerId:14,clientX:300,clientY:100,timeStamp:100});
+state=controls.read();assert.ok(state.forward>.8 && state.lookX>0 && state.firePressed,'Second-finger tap fires while moving and aiming');
+move(13,240,100);assert.ok(controls.read().lookX>0,'Aim finger keeps ownership after another finger taps');
+controls.reset();
 console.log('Touch input verified: analog/dead-zone movement, three-finger look/fire, drag aim, cancellation, toggles, actions, pause and rotation cleanup.');

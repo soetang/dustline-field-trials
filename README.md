@@ -30,9 +30,14 @@ Travel speed is 3.25 m/s versus the player's 3.65 m/s, with slower combat moveme
 They still need tuning.
 
 Use a browser with WebGL2 and hardware acceleration. **Desktop mouse/keyboard
-and mobile touch controls are both supported on the same site.** Landscape is
-recommended on phones: left stick to move, swipe the view to look, hold FIRE
-(drag it to aim), and tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
+and mobile touch controls are both supported on the same site.** Mobile defaults
+to landscape: Deploy requests fullscreen and orientation locking when supported;
+otherwise rotate the phone sideways. A rotate-phone prompt holds the round in
+portrait, with an explicit portrait fallback. Browser/OS rotation locks cannot
+always be overridden ([browser API limitations](https://developer.mozilla.org/en-US/docs/Web/API/ScreenOrientation/lock)).
+Use the left stick to move, swipe the view to look, tap the view to fire, or hold
+FIRE and drag it to aim while shooting. Another finger can tap to fire while the
+first keeps aiming. Tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
 dedicated buttons. Touch play does not require pointer lock. Phones default to
 Performance mode with capped render density; real-device performance varies.
 No account or installation is needed. This is single-player with bots, not online
@@ -114,7 +119,9 @@ Shift walk · Ctrl crouch · E hold to defuse · B armory · 1–4 buy
 
 Tab scoreboard · C spectate next teammate · Escape pause · F8 screenshot view
 
-Buy at spawn during the first 20 seconds. Defusing takes five seconds with your
+The first seven seconds are preparation: everyone is held in place while you
+buy and aim, then a ROUND LIVE cue unlocks movement. Buy at spawn during the
+first 20 seconds. Defusing takes five seconds with your
 kit. Friendly fire is off; a planted bomb must still be defused after the last
 attacker is eliminated. Short bursts and stationary aiming improve accuracy.
 

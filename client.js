@@ -4,6 +4,8 @@
   const canvas = $('bevy-canvas');
   const touchMode = !!window.matchMedia?.('(pointer: coarse)').matches || Number(navigator.maxTouchPoints) > 0 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   let touch = null;
+  let portraitAllowed = false, orientationPending = false;
+  const needsRotation = () => touchMode && window.innerHeight > window.innerWidth && !portraitAllowed;
   const prices = [3100, 2700, 4750, 700], magazines = [30, 30, 10, 7];
   const ui = { started: false, paused: true, shop: false, screenshot: false, ready: false, commands: [], sensitivity: 1, volume: .6, quality: touchMode ? 'low' : 'standard', seed: Math.floor(Math.random() * 0xffffffff) || 1 };
   let held = {}, lookX = 0, lookY = 0, firePressed = false, reloadPressed = false;
@@ -19,9 +21,27 @@
   const show = (id, visible) => { $(id).hidden = !visible; };
   const clock = seconds => `${Math.floor(Math.max(0, Math.ceil(seconds)) / 60)}:${String(Math.max(0, Math.ceil(seconds)) % 60).padStart(2, '0')}`;
   const money = amount => '$' + amount.toLocaleString('en-US');
-  const active = () => ui.started && !ui.paused && !document.hidden && (touchMode || document.pointerLockElement === canvas || ui.shop);
+  const active = () => ui.started && !ui.paused && !document.hidden && !needsRotation() && (touchMode || document.pointerLockElement === canvas || ui.shop);
   const clearInput = () => { held = {}; lookX = 0; lookY = 0; firePressed = false; reloadPressed = false; touch?.reset(); };
-  const showTouch = () => { show('touch-controls', touchMode && active() && !ui.shop && !ui.screenshot && state?.phase !== 'finished'); };
+  const showTouch = () => {
+    show('touch-controls', touchMode && active() && !ui.shop && !ui.screenshot && state?.phase !== 'finished');
+    show('rotate-phone', ui.started && !ui.paused && !ui.shop && needsRotation() && state?.phase !== 'finished');
+  };
+
+  async function requestLandscape() {
+    const orientation=window.screen?.orientation;
+    if(!touchMode || orientationPending || typeof orientation?.lock!=='function')return;
+    orientationPending=true;
+    try {
+      // Most implementations require fullscreen and a user gesture. Neither
+      // rejection may prevent play; portrait gets a paused rotate-phone prompt.
+      if(!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        try { await document.documentElement.requestFullscreen(); } catch {}
+      }
+      await orientation.lock('landscape');
+    } catch { /* Optional browser capability; physical rotation remains usable. */ }
+    finally { orientationPending=false; showTouch(); }
+  }
 
   function saveSettings() {
     try { localStorage.setItem('desert-strike-settings', JSON.stringify({ sensitivity: ui.sensitivity, volume: ui.volume, quality: ui.quality })); } catch {}
@@ -56,7 +76,7 @@
     screenshotView(false);
     clearInput();
     initAudio(); ui.paused = false; ui.shop = false; show('pause', false); show('buy-menu', false);
-    if (touchMode) { showTouch(); return; }
+    if (touchMode) { showTouch(); void requestLandscape(); return; }
     canvas.focus({ preventScroll: true });
     try { await canvas.requestPointerLock(); } catch { pause(); text('pause-heading', 'CLICK TO REJOIN.'); }
   }
@@ -101,6 +121,12 @@
   $('restart').addEventListener('click', () => deploy(true));
   $('play-again').addEventListener('click', () => deploy(true));
   $('close-buy').addEventListener('click', () => capture());
+  $('continue-portrait').addEventListener('click', () => { portraitAllowed=true; clearInput(); showTouch(); });
+  window.addEventListener('resize', () => {
+    if(!touchMode)return;
+    if(window.innerWidth>=window.innerHeight)portraitAllowed=false;
+    clearInput(); showTouch();
+  });
   $('screenshot-mode').addEventListener('click', toggleScreenshot);
   $('screenshot-exit').addEventListener('click', toggleScreenshot);
   function diagnostics() {

@@ -10,6 +10,9 @@ module.exports=async(page,url,uiOnly)=>{
     const match=window.matchMedia.bind(window);
     window.matchMedia=q=>q==='(pointer: coarse)'?{matches:false}:match(q);
     HTMLCanvasElement.prototype.focus=()=>{throw new Error('Touch deployment must not focus the canvas');};
+    window.orientationRequests=[];
+    Element.prototype.requestFullscreen=async()=>{window.orientationRequests.push('fullscreen');throw new Error('Fullscreen unavailable');};
+    Object.defineProperty(screen.orientation,'lock',{configurable:true,value:async value=>{window.orientationRequests.push(value);throw new Error('Orientation lock unavailable');}});
   });
   if(uiOnly)await page.route('**/boot.js',r=>r.fulfill({contentType:'application/javascript',body:''}));
   await page.goto(url,{waitUntil:'domcontentloaded'});
@@ -24,6 +27,7 @@ module.exports=async(page,url,uiOnly)=>{
   assert.equal(await page.evaluate(()=>document.pointerLockElement),null,'Touch play must not depend on pointer lock');
   if(uiOnly)assert.equal((await input()).active,true);
   else await page.waitForFunction(()=>window.desertStrike.getState().started);
+  if(uiOnly)assert.deepEqual(await page.evaluate(()=>window.orientationRequests),['fullscreen','landscape'],'Rejected orientation APIs must not prevent deployment');
   // Buy before movement: slow software-rendered input checks can walk out of
   // the real spawn buy radius while waiting for the next HUD packet.
   await page.locator('#touch-buy').tap();await page.locator('#buy-menu').waitFor({state:'visible'});
@@ -35,8 +39,8 @@ module.exports=async(page,url,uiOnly)=>{
   const center=async id=>{const b=await page.locator('#'+id).boundingBox();assert.ok(b);return {x:b.x+b.width/2,y:b.y+b.height/2};};
   const cdp=await page.context().newCDPSession(page);
   const fingers=new Map();
-  const send=async type=>{
-    await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:[...fingers].map(([id,p])=>({id,...p,radiusX:2,radiusY:2,force:1}))});
+  const send=async(type,points=[...fingers],timestamp)=>{
+    await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points.map(([id,p])=>({id,...p,radiusX:2,radiusY:2,force:1})),...(timestamp===undefined?{}:{timestamp})});
     await page.waitForTimeout(80); // Flush Chromium's coalesced pointer moves.
   };
   const down=async(id,p)=>{fingers.set(id,p);await send('touchStart');};
@@ -59,6 +63,24 @@ module.exports=async(page,url,uiOnly)=>{
   }
   await release();
   console.log('Mobile: deployed without pointer lock; simultaneous movement and swipe aim verified');
+  if(!uiOnly)await page.waitForFunction(()=>window.desertStrike.getState().phase==='live',null,{timeout:60000});
+  state=await get();
+  if(uiOnly)await page.evaluate(()=>{
+    window.tapTrace=[];
+    for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,e=>window.tapTrace.push({type,id:e.pointerId,target:e.target.id,x:e.clientX,y:e.clientY,t:e.timeStamp}));
+  });
+  await down(10,{x:430,y:175});await move(10,{x:450,y:175});
+  if(uiOnly)assert.equal((await input()).firePressed,false,'Swiping should look without shooting');
+  const tapTime=Date.now()/1000;
+  fingers.set(11,{x:505,y:175});await send('touchStart',[...fingers],tapTime);
+  // CDP touchEnd takes the released fingers, unlike touchMove. Explicit event
+  // timestamps model a real quick tap even on a slow software-rendering host.
+  await send('touchEnd',[[11,fingers.get(11)]],tapTime+.12);fingers.delete(11);
+  if(uiOnly){const s=await input();assert.ok(s.firePressed && s.held.fire,'Second finger tap must fire while first finger aims: '+JSON.stringify(await page.evaluate(()=>window.tapTrace)));assert.equal((await input()).held.fire,undefined);}
+  else await page.waitForFunction(ammo=>window.desertStrike.getState().ammo<ammo,state.ammo);
+  await move(10,{x:460,y:175});
+  if(uiOnly)assert.ok((await input()).lookX>0,'First finger keeps aiming after another finger fires');
+  await release();
   await page.locator('#touch-aim').tap();
   if(uiOnly)assert.equal((await input()).held.aim,true);
   else await page.waitForFunction(()=>window.desertStrike.getState().aiming);
@@ -92,6 +114,15 @@ module.exports=async(page,url,uiOnly)=>{
   }
   if(uiOnly) {
     await page.setViewportSize({width:390,height:844});
+    await page.locator('#rotate-phone').waitFor({state:'visible'});
+    assert.equal((await input()).active,false,'Portrait defaults to a held game while rotating');
+    assert.equal(await page.locator('#pause').isVisible(),false,'Rotate guidance must not be mistaken for the pause bug');
+    await page.setViewportSize({width:844,height:390});
+    await page.locator('#rotate-phone').waitFor({state:'hidden'});
+    assert.equal((await input()).active,true,'Physical landscape rotation resumes play');
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('#continue-portrait').tap();
+    assert.equal((await input()).active,true,'Portrait remains an explicit accessibility fallback');
     for(const id of ['touch-move','touch-fire','touch-pause','touch-buy','touch-reload']) {
       const box=await page.locator('#'+id).boundingBox();
       assert.ok(box && box.x>=0 && box.y>=0 && box.x+box.width<=391 && box.y+box.height<=845,`${id} must fit portrait`);
@@ -100,6 +131,13 @@ module.exports=async(page,url,uiOnly)=>{
     fs.mkdirSync('artifacts',{recursive:true});
     await page.screenshot({path:'artifacts/mobile-controls-portrait.png'});
     await page.locator('#touch-pause').tap();await page.locator('#pause').waitFor({state:'visible'});
+    await page.evaluate(()=>{
+      window.orientationRequests=[];
+      document.documentElement.requestFullscreen=async()=>{window.orientationRequests.push('fullscreen');};
+      Object.defineProperty(screen.orientation,'lock',{configurable:true,value:async value=>window.orientationRequests.push(value)});
+    });
+    await page.locator('#resume').tap();
+    assert.deepEqual(await page.evaluate(()=>window.orientationRequests),['fullscreen','landscape'],'Supported browsers request fullscreen then landscape');
   }
   assert.deepEqual(failures,[]);
   console.log(`Mobile ${uiOnly?'UI':'Wasm gameplay'} checks passed; emulated touch browser, not a physical-phone performance test.`);
