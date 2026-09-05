@@ -13,6 +13,19 @@ module.exports=async(page,url,uiOnly)=>{
     window.orientationRequests=[];
     Element.prototype.requestFullscreen=async()=>{window.orientationRequests.push('fullscreen');throw new Error('Fullscreen unavailable');};
     Object.defineProperty(screen.orientation,'lock',{configurable:true,value:async value=>{window.orientationRequests.push(value);throw new Error('Orientation lock unavailable');}});
+    Object.defineProperty(navigator,'audioSession',{configurable:true,value:{type:'auto'}});
+    const NativeAudio=window.AudioContext;
+    window.AudioContext=class extends NativeAudio {
+      constructor(...args) {
+        super(...args);window.testAudioContext=this;
+        const createGain=this.createGain.bind(this);let first=true;
+        this.createGain=(...args)=>{
+          const node=createGain(...args);
+          if(first){first=false;window.audioMeter=this.createAnalyser();node.connect(window.audioMeter);}
+          return node;
+        };
+      }
+    };
   });
   if(uiOnly)await page.route('**/boot.js',r=>r.fulfill({contentType:'application/javascript',body:''}));
   await page.goto(url,{waitUntil:'domcontentloaded'});
@@ -138,6 +151,25 @@ module.exports=async(page,url,uiOnly)=>{
     });
     await page.locator('#resume').tap();
     assert.deepEqual(await page.evaluate(()=>window.orientationRequests),['fullscreen','landscape'],'Supported browsers request fullscreen then landscape');
+    await page.locator('#touch-pause').tap();
+    assert.equal(await page.evaluate(()=>navigator.audioSession.type),'playback');
+    await page.evaluate(()=>window.testAudioContext.suspend());
+    await page.locator('#test-sound').tap();
+    await page.waitForFunction(()=>{
+      const samples=new Float32Array(window.audioMeter.fftSize);window.audioMeter.getFloatTimeDomainData(samples);
+      return window.testAudioContext.state==='running' && samples.some(n=>Math.abs(n)>.001);
+    },null,{polling:20,timeout:3000});
+    assert.match(await page.locator('#audio-status').textContent(),/Test tones sent/);
+    await page.evaluate(()=>window.testAudioContext.suspend());
+    await page.locator('#pause-heading').tap();
+    await page.waitForFunction(()=>window.testAudioContext.state==='running',null,{timeout:3000});
+    await page.locator('#volume').evaluate(el=>{el.value=0;el.dispatchEvent(new Event('input'));});
+    await page.locator('#test-sound').tap();assert.match(await page.locator('#audio-status').textContent(),/Muted/);
+    assert.match(await page.evaluate(()=>window.desertStrike.getDiagnostics()),/game volume: 0%/);
+    await page.evaluate(()=>window.testAudioContext.close());
+    await page.locator('#test-sound').tap();
+    assert.equal(await page.evaluate(()=>window.testAudioContext.state),'running','Closed audio context must be recreated');
+    console.log('Mobile audio: measured nonzero generated samples, recovered suspension, respected mute and recreated a closed context.');
   }
   assert.deepEqual(failures,[]);
   console.log(`Mobile ${uiOnly?'UI':'Wasm gameplay'} checks passed; emulated touch browser, not a physical-phone performance test.`);

@@ -10,7 +10,7 @@
   const ui = { started: false, paused: true, shop: false, screenshot: false, ready: false, commands: [], sensitivity: 1, volume: .6, quality: touchMode ? 'low' : 'standard', seed: Math.floor(Math.random() * 0xffffffff) || 1 };
   let held = {}, lookX = 0, lookY = 0, firePressed = false, reloadPressed = false;
   let state = null, previous = null, feedKey = '', scoreKey = '', mapDrawn = false;
-  let audio = null, master = null, noise = null, nextBeep = 0, stepDistance = 0, lastPosition = null;
+  let audio = null, master = null, noise = null, audioError = '', nextBeep = 0, stepDistance = 0, lastPosition = null;
   try {
     const settings = JSON.parse(localStorage.getItem('desert-strike-settings') || '{}');
     ui.sensitivity = Math.min(2.5, Math.max(.3, Number(settings.sensitivity) || 1));
@@ -46,17 +46,27 @@
   function saveSettings() {
     try { localStorage.setItem('desert-strike-settings', JSON.stringify({ sensitivity: ui.sensitivity, volume: ui.volume, quality: ui.quality })); } catch {}
   }
-  function initAudio() {
+  function audioStatus() {
+    return ui.volume === 0 ? 'Muted in game settings' : audioError || `Audio: ${audio?.state || 'not started'}`;
+  }
+  async function initAudio() {
     try {
-      if (!audio) {
+      // Treat explicitly started game sound as media playback where supported.
+      // This avoids iOS routing Web Audio only through the ringer volume.
+      try { if(navigator.audioSession)navigator.audioSession.type='playback'; } catch {}
+      if (!audio || audio.state === 'closed') {
         const Audio = window.AudioContext || window.webkitAudioContext;
-        if (!Audio) return;
+        if (!Audio) { audioError='Web Audio is unavailable'; return false; }
         audio = new Audio(); master = audio.createGain(); master.gain.value = ui.volume; master.connect(audio.destination);
         noise = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
         const data = noise.getChannelData(0); for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        audio.addEventListener('statechange',()=>{if(audio.state!=='running')text('audio-status',audioStatus());});
       }
-      audio.resume().catch(() => {});
-    } catch { audio = null; }
+      audioError='';
+      if(audio.state!=='running')await audio.resume();
+      return audio.state==='running';
+    } catch (error) { audioError=`Sound could not start: ${error?.message || 'tap TEST SOUND to retry'}`; return false; }
+    finally { text('audio-status',audioStatus()); }
   }
   function tone(frequency, duration, volume = .12, type = 'sine', delay = 0, end = frequency) {
     if (!audio || audio.state !== 'running') return;
@@ -75,7 +85,7 @@
   async function capture() {
     screenshotView(false);
     clearInput();
-    initAudio(); ui.paused = false; ui.shop = false; show('pause', false); show('buy-menu', false);
+    void initAudio(); ui.paused = false; ui.shop = false; show('pause', false); show('buy-menu', false);
     if (touchMode) { showTouch(); void requestLandscape(); return; }
     canvas.focus({ preventScroll: true });
     try { await canvas.requestPointerLock(); } catch { pause(); text('pause-heading', 'CLICK TO REJOIN.'); }
@@ -121,6 +131,12 @@
   $('restart').addEventListener('click', () => deploy(true));
   $('play-again').addEventListener('click', () => deploy(true));
   $('close-buy').addEventListener('click', () => capture());
+  $('test-sound').addEventListener('click', async () => {
+    if(await initAudio()) {
+      tone(520,.25,.12);tone(780,.3,.12,'sine',.28);
+      text('audio-status', ui.volume===0 ? 'Muted: raise AUDIO VOLUME, then test again.' : 'Test tones sent. If silent, check phone media volume, silent mode or Bluetooth output.');
+    }
+  });
   $('continue-portrait').addEventListener('click', () => { portraitAllowed=true; clearInput(); showTouch(); });
   window.addEventListener('resize', () => {
     if(!touchMode)return;
@@ -135,6 +151,7 @@
       `Page: ${location.origin}${location.pathname}`,
       `Build: ${window.desertStrike.release || 'not loaded'}`,
       `Match seed: ${state?.seed ?? ui.seed}; graphics: ${ui.quality}; input: ${touchMode ? 'touch' : 'mouse'}`,
+      `${audioStatus()}; game volume: ${Math.round(ui.volume*100)}%; session: ${navigator.audioSession?.type || 'browser default'}`,
       `Map: ${state?.map[0].length || '?'} × ${state?.map.length || '?'} metres`,
       `Browser: ${navigator.userAgent}`,
       `Canvas: ${canvas.width} × ${canvas.height}; recent frame: ${state?.fps.toFixed(1) || '?'} FPS`,
@@ -171,6 +188,12 @@
     if (!touchMode || document.hidden) pause();
   });
   window.addEventListener('pagehide', pause);
+  // Touch controls prevent synthetic clicks while dragging. Retry audio from
+  // the actual touch release, including after Safari interrupts an AudioContext.
+  document.addEventListener('pointerup', event => {
+    if(event.target?.id==='test-sound')return; // Its click handler awaits resume and reports the result.
+    if(touchMode && ui.started && !document.hidden && audio?.state!=='running')void initAudio();
+  }, {passive:true});
   window.addEventListener('contextmenu', event => event.preventDefault());
   document.addEventListener('keydown', event => {
     if (active() && !ui.shop && event.target.tagName !== 'INPUT') {

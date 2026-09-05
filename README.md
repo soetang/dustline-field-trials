@@ -55,6 +55,12 @@ The editable Blender generators are included. The six external concrete textures
 are **CC0 from Poly Haven**; no Counter-Strike/Valve artwork or commercial sound
 samples are included. Sounds are synthesized in code.
 
+If mobile sound is silent, open PAUSE → TEST SOUND / ENABLE AUDIO. This retries
+the browser audio context and plays two generated tones. Check game/media volume,
+silent mode and Bluetooth output if the test remains silent. COPY TEST DETAILS
+includes audio state and volume. Where supported, explicit playback uses the
+browser's media audio session; no sound files or microphone access are needed.
+
 See [THIRD_PARTY.md](THIRD_PARTY.md), the [asset manifest](assets/manifest.json),
 [texture source URLs/checksums](assets/textures/sources.json) and [license notices](licenses).
 An unused local texture without documented provenance is excluded from Git and
