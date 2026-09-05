@@ -12,5 +12,6 @@ if [[ "${1:-}" != "--source-only" ]]; then node tests/client-check.js; fi
 node tests/client-input.js
 node tests/touch-input.js
 node tests/models-check.js
+node tests/capture-tools.js
 node tests/smoke.js
 echo "Fast checks passed. Browser integration: npm run test:browser"

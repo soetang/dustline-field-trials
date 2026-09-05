@@ -152,9 +152,27 @@ opens the earlier prototype. No backend is required.
 
 After installing Playwright and exporting the site, `node scripts/capture-gameplay.js`
 captures actual browser screenshots and a raw silent recording, testing assets
-under a repository URL prefix. `node scripts/trim-gameplay.js` saves the short
-clip. Raw sessions stay in ignored `artifacts/video-raw/`; curated media lives in
-`docs/media/`.
+under a repository URL prefix. A smooth, speed-limited mouse driver follows a
+walkable route using normal game input. `node scripts/trim-gameplay.js` saves a
+short clip beside that session. Each attempt gets its own directory in ignored
+`artifacts/video-raw/`, with renderer, frame-timing and movement diagnostics.
+Neither command overwrites public media: review the clip before copying it and
+the screenshots into `docs/media/`.
+
+Browser tests and captures use portable SwiftShader by default. To use an
+available hardware OpenGL driver, set `DUSTLINE_GPU=1`. On this WSL machine,
+the Mesa/D3D12 driver still stalls during gameplay even when its NVIDIA adapter
+starts successfully. These are local test settings, not flags required by
+players. Captures use native pixel density;
+`TEST_DPR=0.65` lowers capture resolution on slower hosts. Recorded frame timing
+is diagnostic, not a performance guarantee for other devices.
+
+On WSL with Windows Chrome installed in its standard location,
+`DUSTLINE_WINDOWS_BROWSER=1 npm run test:browser -- --performance --playtest`
+runs the same tests through native Windows graphics. The same environment flag
+works with the capture script. The runner creates a fresh temporary profile,
+uses a loopback-only debugging bridge, and closes only its own browser. It
+does not change your normal browser profile or the deployed game.
 
 `bash scripts/build-capture.sh` builds a separate, development-only engine with
 explicit time steps for offline recording experiments. It does not change the

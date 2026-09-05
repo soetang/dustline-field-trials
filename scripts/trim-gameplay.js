@@ -9,6 +9,7 @@ const ffmpeg = process.env.FFMPEG_BIN || registry.findExecutable('ffmpeg').execu
 const duration = Math.min(30,info.clipEnd-info.clipStart);
 if (!(duration>1)) throw new Error('Recording contains no gameplay');
 const start = Math.max(info.clipStart,info.clipEnd-duration);
-const output = 'docs/media/gameplay.webm';
+// Encoding is review-only: never silently replace the public clip with a bad run.
+const output = path.join(info.directory || path.dirname(info.raw),'gameplay.webm');
 execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-n','-ss',String(start),'-i',info.raw,'-t',String(duration),'-an','-c:v','libvpx','-b:v','1000k','-crf','12','-deadline','good','-cpu-used','4',output],{stdio:'inherit'});
 console.log(`Saved ${duration.toFixed(1)}s silent gameplay clip: ${output} (${(fs.statSync(output).size/1024/1024).toFixed(1)} MiB).`);

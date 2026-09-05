@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const {launchBrowser}=require('../scripts/browser-options');
 
 (async () => {
   const root = path.resolve(__dirname, '..');
@@ -27,7 +28,7 @@ const path = require('node:path');
   const watchdog = setTimeout(() => { console.error('Browser check exceeded its time budget. Last HUD:', lastState); browser?.close(); }, performanceMode ? 300000 : 180000);
   watchdog.unref();
   try {
-    browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
+    browser = await launchBrowser(chromium);
     // Exercise the full responsive UI, with fewer software-rendered pixels in CI.
     page = await browser.newPage({ viewport: mobile ? {width:844,height:390} : { width: 1000, height: 680 }, deviceScaleFactor: Number(process.env.TEST_DPR || .4), ...(mobile ? {hasTouch:true,isMobile:true} : {}) });
     if (mobile) {

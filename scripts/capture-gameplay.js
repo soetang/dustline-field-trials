@@ -6,11 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
+const {launchBrowser}=require('./browser-options');
+const {steeringStep}=require('./capture-steering');
 const root = path.resolve(__dirname,'..','_site');
 const prefix = '/dustline-field-trials/';
-const media = path.resolve(__dirname,'..','docs','media');
-fs.mkdirSync(media,{recursive:true});
-fs.mkdirSync('artifacts/video-raw',{recursive:true});
 const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.wasm':'application/wasm','.glb':'model/gltf-binary','.jpg':'image/jpeg','.json':'application/json'};
 const server = http.createServer((req,res) => {
   const url = new URL(req.url,'http://localhost');
@@ -50,15 +49,18 @@ function clearLine(map,a,b,radius=0) {
   }
   return true;
 }
-(async()=>{
+module.exports={route,clearLine,server,prefix};
+if(require.main===module)(async()=>{
   let browser,context,page,watchdog;
+  fs.mkdirSync('artifacts/video-raw',{recursive:true});
+  const output=fs.mkdtempSync('artifacts/video-raw/session-');
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const failures=[];
   try {
-    browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-webgl','--ignore-gpu-blocklist']});
-    context=await browser.newContext({viewport:{width:960,height:640},deviceScaleFactor:.65,recordVideo:{dir:'artifacts/video-raw',size:{width:960,height:640}}});
+    browser=await launchBrowser(chromium);
+    context=await browser.newContext({viewport:{width:960,height:640},deviceScaleFactor:Number(process.env.TEST_DPR || 1),recordVideo:{dir:output,size:{width:960,height:640}}});
     page=await context.newPage();
-    watchdog=setTimeout(()=>browser.close(),240000);watchdog.unref();
+    watchdog=setTimeout(()=>browser.close(),300000);watchdog.unref();
     page.setDefaultTimeout(30000);
     await page.addInitScript(()=>{
       localStorage.setItem('desert-strike-settings',JSON.stringify({quality:'low'}));
@@ -69,6 +71,13 @@ function clearLine(map,a,b,radius=0) {
     const videoEpoch=Date.now();
     await page.goto(`http://127.0.0.1:${server.address().port}${prefix}`,{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>window.desertStrike?.getState(),null,{timeout:90000});
+    await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:60000});
+    const renderer=await page.evaluate(()=>{
+      const gl=document.getElementById('bevy-canvas').getContext('webgl2');
+      const debug=gl.getExtension('WEBGL_debug_renderer_info');
+      return gl.getParameter(debug?debug.UNMASKED_RENDERER_WEBGL:gl.RENDERER);
+    });
+    console.log('Recording renderer:',renderer);
     await page.waitForTimeout(1500);
     await page.locator('#deploy').click();
     await page.waitForFunction(()=>document.pointerLockElement?.id==='bevy-canvas');
@@ -76,12 +85,31 @@ function clearLine(map,a,b,radius=0) {
     await page.keyboard.press('F8');
     await page.waitForFunction(()=>document.body.classList.contains('screenshot-view'));
     await page.waitForTimeout(700);
-    await page.screenshot({path:path.join(media,'dustline-spawn.png'),timeout:30000});
+    await page.screenshot({path:path.join(output,'dustline-spawn.png'),timeout:30000});
     await page.keyboard.press('Escape');await page.locator('#resume').click();
-    await page.waitForFunction(()=>window.desertStrike.getState().phase==='live',null,{timeout:45000});
+    await page.waitForFunction(()=>window.desertStrike.getState().phase==='live',null,{timeout:90000});
+    // Drive relative mouse events on animation frames, not abrupt Node-side yaw
+    // jumps. The normal client and simulation consume every movement/fire input.
+    await page.evaluate(`(() => {
+      const steeringStep=${steeringStep.toString()};
+      window.captureDriver={targetYaw:null,frames:[],active:true};
+      let previous=performance.now();
+      function steer(now) {
+        const driver=window.captureDriver;if(!driver.active)return;
+        const dt=(now-previous)/1000;previous=now;driver.frames.push(dt*1000);
+        const s=window.desertStrike.getState();
+        if(driver.targetYaw!==null && s.health>0 && document.pointerLockElement) {
+          const delta=steeringStep(s.yaw,s.pitch,driver.targetYaw,dt);
+          document.dispatchEvent(new MouseEvent('mousemove',{movementX:delta.dx,movementY:delta.dy,bubbles:true}));
+        }
+        requestAnimationFrame(steer);
+      }
+      requestAnimationFrame(steer);
+    })()`);
     const start=await get();
     let waypoints=route(start.map,start,[9,26]);
     const clipStart=(Date.now()-videoEpoch)/1000;
+    console.log('Capturing live movement, aiming and firing…');
     const deadline=Date.now()+35000;
     let fired=false,travel=0,last=start;
     while(Date.now()<deadline) {
@@ -94,14 +122,15 @@ function clearLine(map,a,b,radius=0) {
       const target=enemy || waypoints[0];
       if(!target)break;
       const yaw=Math.atan2(s.x-target.x,s.z-target.z), turn=angle(yaw-s.yaw);
-      await page.evaluate(({dx,dy})=>document.dispatchEvent(new MouseEvent('mousemove',{movementX:dx,movementY:dy,bubbles:true})),{dx:-turn/.0022,dy:(s.pitch+.035)/.0022});
+      await page.evaluate(yaw=>{window.captureDriver.targetYaw=yaw;},yaw);
       if(enemy) {
         await page.keyboard.up('KeyW');
-        await page.mouse.down();await page.waitForTimeout(350);await page.mouse.up();fired=true;
+        if(Math.abs(turn)<.18){await page.mouse.down();await page.waitForTimeout(160);await page.mouse.up();fired=true;}
         if(s.ammo<5 && s.reload===0)await page.keyboard.press('KeyR');
       } else {
-        await page.keyboard.down('KeyW');await page.waitForTimeout(180);
+        await page.keyboard[Math.abs(turn)<.4?'down':'up']('KeyW');
       }
+      await page.waitForTimeout(100);
       await page.waitForFunction(t=>window.desertStrike.getState().time!==t,s.time,{timeout:10000});
     }
     await page.keyboard.up('KeyW');await page.mouse.up();
@@ -111,18 +140,25 @@ function clearLine(map,a,b,radius=0) {
       await page.keyboard.press('KeyR');await page.waitForTimeout(2200);
     }
     const clipEnd=(Date.now()-videoEpoch)/1000;
+    const timing=await page.evaluate(()=>{window.captureDriver.active=false;return window.captureDriver.frames;});
     await page.keyboard.press('F8');
     await page.waitForFunction(()=>document.body.classList.contains('screenshot-view'));
     await page.waitForTimeout(500);
-    await page.screenshot({path:path.join(media,'dustline-lane.png'),timeout:30000});
+    await page.screenshot({path:path.join(output,'dustline-lane.png'),timeout:30000});
     const finish=await get();
     assert.ok(travel>3,'Recording must include real movement');
     assert.deepEqual(failures,[],'Exported site must not have missing assets or runtime errors');
+    const release=await page.evaluate(()=>window.desertStrike.release);
     const video=page.video();
     await context.close();context=null;
-    await video.saveAs('artifacts/video-raw/full-session.webm');
-    fs.writeFileSync('artifacts/video-raw/capture.json',JSON.stringify({clipStart,clipEnd,travel,shots:finish.shots,seed:finish.seed,release:finish.release,quality:'Performance; software-rendered; silent',raw:'artifacts/video-raw/full-session.webm'},null,2));
-    console.log(`Saved two actual gameplay screenshots and raw recording. Movement ${travel.toFixed(1)}m; clip ${clipStart.toFixed(1)}–${clipEnd.toFixed(1)}s.`);
+    const raw=path.join(output,'full-session.webm');
+    await video.saveAs(raw);
+    const sorted=timing.slice().sort((a,b)=>a-b);
+    const cadence={frames:timing.length,averageFps:1000*timing.length/timing.reduce((a,b)=>a+b,0),p95FrameMs:sorted[Math.floor(sorted.length*.95)],longFrames:timing.filter(ms=>ms>100).length};
+    const report={clipStart,clipEnd,travel,shots:finish.shots-start.shots,seed:finish.seed,release,renderer,cadence,quality:'Performance; real-time browser rendering; silent',raw,directory:output};
+    fs.writeFileSync(path.join(output,'capture.json'),JSON.stringify(report,null,2));
+    fs.writeFileSync('artifacts/video-raw/capture.json',JSON.stringify(report,null,2));
+    console.log(`Saved review-only screenshots and raw recording in ${output}. Movement ${travel.toFixed(1)}m; clip ${clipStart.toFixed(1)}–${clipEnd.toFixed(1)}s.`,cadence);
   } finally {
     clearTimeout(watchdog);
     if(context)await context.close();if(browser)await browser.close();
