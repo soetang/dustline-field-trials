@@ -37,7 +37,9 @@ jobs:
       - name: Full seeded AI simulation playtest
         run: bash scripts/playtest-ai.sh
       - name: Export only the current release and licensed assets
-        run: node scripts/export-site.js
+        run: |
+          node scripts/export-site.js
+          node tests/site-check.js
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

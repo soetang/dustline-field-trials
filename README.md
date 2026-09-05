@@ -1,137 +1,128 @@
 # Dustline: Field Trials
 
-A browser-based tactical FPS inspired by **Counter-Strike**, built with Rust, WebAssembly and the open-source Bevy engine. An experimental **Sol + Astra run**: an evolving AI-assisted game-development experiment, not a finished commercial game. This is an independent project, not affiliated with Valve.
+An experimental **Sol + Astra run**: a browser tactical FPS inspired by
+**Counter-Strike**, built with Rust, WebAssembly, Bevy and Blender.
+An independent AI-assisted development experiment—not affiliated with Valve.
 
-Original code and procedural art are **MIT licensed**. External textures are **CC0**; dependency and font licenses are documented in [THIRD_PARTY.md](THIRD_PARTY.md). No proprietary game assets are included.
+**[Play in your browser](https://soetang.github.io/dustline-field-trials/)** ·
+[Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html) ·
+[Download the clip](docs/media/gameplay.webm)
 
-## Play
+![Dustline arena and original operator models, captured in the actual game](docs/media/dustline-spawn.png)
 
-The public browser version is published to
-**https://soetang.github.io/dustline-field-trials/** by the GitHub Pages workflow.
+[![A second view from the playable arena; click to watch gameplay](docs/media/dustline-lane.png)](https://soetang.github.io/dustline-field-trials/watch.html)
+
+Actual browser captures, not concept art. The silent recording uses Performance
+mode on a software renderer; its frame rate is not a gaming-PC benchmark.
+
+## What is playable?
+
+Five-versus-five bomb defusal against bots, first to five rounds. Four weapons,
+weapon-specific spread and recoil, economy, reloading, aiming/scope, walking,
+crouching, spectating, radar and squad status. The 64 × 48 m desert arena has
+three lanes, cover, gentle hills, original operator models and sandstone ridges.
+
+Bots use sight, short-lived contacts, nearby callouts, bursts, cover-aware
+repositioning and separate bomb/cover roles. Wounded bots briefly hold their
+retreat; teammates no longer steal an active defuse. They still need tuning.
+
 Use a desktop browser with WebGL2, hardware acceleration, a mouse and keyboard.
-There is no account, installation, backend server, or multiplayer service.
-The initial engine download is approximately 58 MB before HTTP compression.
+No account or installation is needed. This is single-player with bots, not online
+multiplayer. The first engine download is roughly 58 MB before HTTP compression.
+If needed, choose **Escape → Graphics → Performance**, or try the
+[classic prototype](https://soetang.github.io/dustline-field-trials/classic.html).
 
-For local development, first [build the client](#build-the-bevy-client).
+## Open source and open graphics
 
-Then serve this directory with any static web server:
+Original code, procedural models, scenery and interface art are **MIT licensed**.
+The editable Blender generators are included. The six external concrete textures
+are **CC0 from Poly Haven**; no Counter-Strike/Valve artwork or commercial sound
+samples are included. Sounds are synthesized in code.
 
-```bash
-python3 -m http.server 8765
-```
+See [THIRD_PARTY.md](THIRD_PARTY.md), the [asset manifest](assets/manifest.json),
+[texture source URLs/checksums](assets/textures/sources.json) and [license notices](licenses).
+An unused local texture without documented provenance is excluded from Git and
+the published site. Experimental weapon GLBs are included as editable-source
+work in progress, but are not yet used by the renderer.
 
-Then open:
+## Build and run locally
 
-- `http://localhost:8765/bevy.html` — Rust + Bevy 3D preview
-- `http://localhost:8765/` — original JavaScript gameplay build
+Install Rust through rustup, Node.js (22 recommended) and a Python 3 static server.
+The repository pins Rust 1.95 and its WebAssembly target.
 
-The Bevy client now plays complete first-to-five matches. Four friendly bots and five attackers navigate the three lanes, fight with line-of-sight checks, recover dropped bombs, plant, retake, and defuse. The player has four purchasable weapons, automatic and semi-automatic fire, accurate headshots, reloads, aiming and an AWP scope, walking, crouching, round rewards, and spectating after death.
-
-Bots now use a forward/peripheral view, short-lived last-seen and gunfire contacts, nearby teammate callouts, cover-aware repositioning, short bursts with reaction delays, and separate bomb recovery/defuse/cover roles. They stop tracking hidden targets and their bullets respect actual cover and crossing teammates. Routes use radius-aware corner smoothing and local spacing. Tab shows your surviving squadmates' current tasks, without exposing enemy tasks. Each new match has a fresh seed, included in the feedback report.
-
-Wounded bots now finish their retreat and briefly hold cover before investigating
-again. A passing teammate no longer interrupts an active defuse or resets its progress.
-
-The browser interface includes a mission briefing, tactical radar, live kill feed, a ten-player scoreboard, clickable armory, hit and damage feedback, synthesized audio, match results, and a pause menu with saved sensitivity and volume. Escape and switching away from the browser pause the simulation.
-
-The expanded Dustline arena is 64 × 48 metres (four times the original footprint). Staggered walls break the mid spawn sightline; the three routes, bot waypoints, radar, and sites use the same enlarged layout. Weapons, movement speeds, and operator sizes remain human-scale. Concrete floor and wall materials include normal maps and packed occlusion/roughness/metalness maps from [Poly Haven](https://polyhaven.com), under [CC0](https://polyhaven.com/license). Source URLs and checksums are recorded in `assets/textures/sources.json`.
-
-Gentle rises now shape Long A, B tunnels and mid. The rendered ground, camera/operator heights, line of sight and bullet collisions share the same terrain triangles. Spawns and bomb sites remain flat. Try walking both side lanes and shooting uphill/downhill; report any sinking props, camera jolts or shots that disagree with visible cover.
-
-The operator models are original Blender-authored GLBs with helmets, goggles, plate carriers, pouches, carbines, boots and hip-pivoted legs. They use four material primitives each; see `assets/models/README.md` for regeneration and validation. A gradient sky and batched sandstone ridges add depth beyond the arena. These are stylised models, not photorealistic scanned assets.
-
-While testing, press Escape → **Copy test details** and paste the report into chat. Add what you did, what you expected, and what happened. A screenshot or short recording is useful. The report identifies the exact build and map, browser, render resolution, recent frame rate, and player position; nothing is uploaded automatically. The classic build remains at `/` for comparison.
-
-For screenshots, press **F8** while playing, or choose **Screenshot view** in the pause menu. This pauses the match and hides the HUD and menu, even when a screenshot tool takes focus. Take the screenshot normally, then press Escape/F8 or click the small return button to get back to the pause menu. Choose Return to action when ready. If your chat/terminal cannot paste images, save the PNG/JPG locally and share its full file path instead.
-
-For the expanded map, try both side routes as well as mid. Check that attackers are hidden at deployment, rotations are not excessively long, and you have useful cover when the first fight starts. Keep a playing tab open while development continues; refresh when you want the next published build.
-
-## Build the Bevy client
-
-The repository pins Rust 1.95 with the WebAssembly target. Install `wasm-bindgen-cli` 0.2.127, then run:
-
-```bash
+```sh
 cargo install wasm-bindgen-cli --version 0.2.127 --locked
 npm run build
+npm run serve
 ```
 
-Generated browser files are written to unique `web/builds/release-*` directories. `web/current.json` is updated only after a complete build, so a refresh during development cannot mix JavaScript and WebAssembly from different releases. Keep the release directory, its `snippets/` subdirectory, and the manifest together when copying the game to a static server.
+Open **http://localhost:8765/bevy.html**. The local root `/` is the classic
+prototype. Do not open the HTML as a `file://` URL.
 
-The build now runs source/input/model checks before compiling and verifies the candidate JS/Wasm import pair before publishing it. A failed check leaves the previous release selected. Old unversioned Wasm files are not required by the release loader or build verification.
+Builds publish a complete immutable JS/Wasm pair to `web/builds/release-*`.
+The loader manifest changes only after verification, so refreshing mid-build
+cannot mix incompatible releases. Generated releases and tools are not in Git.
 
-If startup fails, the error panel shows the specific cause and a retry button. Use an HTTP server, not a `file://` URL. The initial WebAssembly download is about 57 MB; the loader shows progress.
+## Test and send feedback
 
-## Verify
-
-Fast checks, without starting the renderer:
-
-```bash
-bash scripts/check.sh --source-only
+```sh
+bash scripts/check.sh --source-only       # fast rules, input and model checks
+bash scripts/playtest-ai.sh               # 24 complete seeded simulation matches
+npm test                                 # after building: also check release/assets
+cargo check --target wasm32-unknown-unknown --offline
 ```
 
-These cover map connectivity, spawn separation/occlusion, every bot route to both sites, collision, weapon and economy rules, wall occlusion and headshots, bomb recovery and defusal, scored round resets, a complete autonomous match, HUD bindings, texture integrity, and every JavaScript function imported by the published WebAssembly module. The fast grid raycaster is compared against an exhaustive geometry reference for 2,000 deterministic rays.
+For real browser checks:
 
-After building, run `npm test` as well to validate the published JavaScript/Wasm
-pair, HUD bindings and texture checksums. `--source-only` does not require a release.
-
-## Publish a browser site
-
-Push to `main` to build and deploy through `.github/workflows/pages.yml`.
-For a fork, enable **Settings → Pages → Source: GitHub Actions** first.
-The first build compiles Bevy and takes longer; subsequent builds reuse a cache.
-`node scripts/export-site.js` creates a static `_site` folder from the current
-local release. It copies only that release, licensed runtime assets and notices;
-old builds, private files and authoring tools are excluded. The website root
-opens the 3D client, with the older prototype at `classic.html`.
-
-After Rust rendering or browser-bridge changes, also run `cargo check --target wasm32-unknown-unknown --offline`. This catches integration/type errors without a full release build (fast once dependencies are cached).
-
-For a fast real-browser check of the screenshot controls and focus-loss behaviour, run `npm run test:browser -- --ui-only`. It exercises the real HTML/CSS and mouse capture with a sample HUD packet, without loading the 3D renderer. It does not verify rendering or gameplay.
-
-Use `npm run test:browser -- --startup-only` for the narrower 3D startup/material check without a full automated match interaction. The fast rules suite also checks that lamps have physical supports and that sky shots cannot create surface impacts.
-
-Run `bash scripts/playtest-ai.sh` for 24 complete seeded simulation matches, alternating a spectator and a simple scripted test player. It checks collision/finite-state safety and match completion, exercises AI/bomb behaviour, and writes `artifacts/ai-playtest.json`. This harness is not a human difficulty rating and does not exercise the browser or GPU.
-
-On a software-only GPU, use `npm run test:browser -- --performance` to run the real gameplay interaction suite with shadows disabled. The browser driver injects explicit relative mouse deltas to avoid its pointer-lock recentering warps; keyboard, clicks, captures and the actual Wasm simulation remain real. The normal in-game default keeps dynamic shadows. You can change this under Escape → Graphics.
-
-Add `--playtest` to continue until the rendered match shows bot travel, combat damage and repositioning, and write `artifacts/browser-playtest.json`. Add `--capture-spawn` for a paused in-game screenshot at `artifacts/dustline-operators-spawn.png`.
-
-For real browser interaction checks:
-
-```bash
-npm install
+```sh
+npm ci
 npx playwright install chromium
-npm run test:browser
+npm run test:browser -- --performance --playtest
 ```
 
-The browser test starts and closes its own local server. It verifies deployment, expanded-map metadata, texture loading, pointer capture, purchases, movement, shooting, reloads, aiming, scoreboard, pause/resume, feedback reports, restart, saved settings, and startup error handling. Use `CAPTURE=1 npm run test:browser` to save screenshots in `artifacts/`. Software-rendered browser tests are functional checks, not representative hardware-GPU performance measurements.
+The browser suite exercises actual Wasm gameplay: deployment, mouse capture,
+purchases, movement, firing, reloads, aiming, pause/resume and live bot combat.
+Simulation tests are not human difficulty ratings, and software rendering is
+not representative GPU performance. `--startup-only` checks only startup;
+`--ui-only` checks interface behaviour without the game renderer.
 
-Run the original gameplay smoke test with:
+While playing, press **Escape → Copy test details**. Paste that report with what
+you tried, what you expected and what happened. It includes the build, match seed,
+position, view angles and performance. Nothing is uploaded automatically.
 
-```bash
-node tests/smoke.js
-```
+**F8** pauses and hides the HUD for screenshots, including across focus loss.
+Escape/F8 returns to the pause menu; choose Return to action to resume.
+If image paste is unavailable, save the image and share its local file path.
 
 ## Controls
 
-- `WASD` — move
-- Mouse — aim
-- Left click — fire
-- Right click — aim / AWP scope
-- `Shift` — walk
-- `Ctrl` — crouch
-- `R` — reload
-- `E` — hold to defuse (5 seconds with your kit)
-- `B` — open/close the armory; `1`–`4` or click to purchase
-- `Tab` — hold for the scoreboard
-- `C` — switch surviving squadmates while spectating
-- `Esc` — release the mouse / pause
-- `F8` — paused screenshot view (Escape/F8 returns to the menu)
+WASD move · mouse aim · left click fire · right click aim/scope · R reload
 
-Buy at CT spawn during the first 20 seconds of each round. The initial 7 seconds are preparation time. Friendly fire is off. Eliminating the attackers does not end a round while a planted bomb is still active.
+Shift walk · Ctrl crouch · E hold to defuse · B armory · 1–4 buy
 
-Weapon accuracy depends on the weapon, movement, aiming, and recent firing. The M4 stays tighter during bursts than the AK; rapid Desert Eagle shots lose precision, while a stationary, scoped AWP is much more accurate than a moving or unscoped one. Sustained fire widens the crosshair and shot grouping, with a small upward bias; pausing between bursts restores precision. Test this against a wall from a fixed position: compare ten rapid shots with ten shots spaced about half a second apart.
+Tab scoreboard · C spectate next teammate · Escape pause · F8 screenshot view
 
-## Desktop
+Buy at spawn during the first 20 seconds. Defusing takes five seconds with your
+kit. Friendly fire is off; a planted bomb must still be defused after the last
+attacker is eliminated. Short bursts and stationary aiming improve accuracy.
 
-The Rust source also has a native entry point (`cargo run --release`) and keyboard HUD. The browser is the primary tested client; the native UI is simpler. A native Linux build requires Bevy's system development dependencies, including Wayland, ALSA, and udev. The current workspace lacks the Wayland development library, so native compilation has not been verified here.
+## Publish and capture
+
+Push to `main` to build and publish through [GitHub Actions](.github/workflows/pages.yml).
+For a fork, enable **Settings → Pages → Source: GitHub Actions** first and update
+the public links. The first build compiles Bevy; subsequent builds use a cache.
+
+`node scripts/export-site.js` creates `_site` containing one verified release,
+allowlisted assets, media and license notices. If `_site` exists, move it aside
+before exporting again. The website root opens the 3D client and `classic.html`
+opens the earlier prototype. No backend is required.
+
+After installing Playwright and exporting the site, `node scripts/capture-gameplay.js`
+captures actual browser screenshots and a raw silent recording, testing assets
+under a repository URL prefix. `node scripts/trim-gameplay.js` saves the short
+clip. Raw sessions stay in ignored `artifacts/video-raw/`; curated media lives in
+`docs/media/`.
+
+The native entry point exists (`cargo run --release`), but the browser is the
+primary tested client. Native Linux needs Bevy's Wayland/ALSA/udev development
+libraries and has not been verified in this workspace.

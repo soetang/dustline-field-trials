@@ -1,0 +1,31 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const root = path.resolve(__dirname,'..','_site');
+const exists = file => fs.existsSync(path.join(root,file));
+for (const file of ['index.html','bevy.html','classic.html','LICENSE','THIRD_PARTY.md','licenses/FiraMono-OFL.txt','licenses/rust-dependencies.txt']) assert.ok(exists(file),`Missing ${file}`);
+for (const file of ['.git','.env','node_modules','.tools','target','src','assets/textures/sandstone-plaster.png']) assert.ok(!exists(file),`Private or unapproved content exported: ${file}`);
+const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
+assert.match(html,/<title>Dustline: Field Trials<\/title>/);
+assert.match(html,/href="\.\/classic.html"/);
+assert.doesNotMatch(html,/href="\.\/index.html"/);
+assert.match(fs.readFileSync(path.join(root,'classic.html'),'utf8'),/id="game"/);
+assert.equal(fs.readdirSync(path.join(root,'web/builds')).length,1,'Publish only one immutable release');
+const release = JSON.parse(fs.readFileSync(path.join(root,'web/current.json'),'utf8'));
+const url = new URL(release.entry,'https://example.github.io/dustline-field-trials/');
+assert.ok(url.pathname.startsWith('/dustline-field-trials/web/builds/'));
+assert.ok(exists(release.entry));
+const textures = JSON.parse(fs.readFileSync(path.join(root,'assets/textures/sources.json'),'utf8'));
+for (const asset of textures.assets) {
+  const data = fs.readFileSync(path.join(root,'assets/textures',asset.file));
+  assert.equal(crypto.createHash('md5').update(data).digest('hex'),asset.md5);
+}
+if (exists('watch.html')) {
+  for (const file of ['dustline-spawn.png','dustline-lane.png','gameplay.webm']) assert.ok(exists('docs/media/'+file));
+  const clip = fs.readFileSync(path.join(root,'docs/media/gameplay.webm'));
+  assert.equal(clip.readUInt32BE(0),0x1a45dfa3,'Video must be an actual WebM container');
+  assert.ok(clip.length>10000 && clip.length<20*1024*1024);
+}
+console.log('Static export verified: project-relative URLs, one release, approved assets/notices, classic fallback, and media when present.');
