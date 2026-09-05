@@ -12,7 +12,7 @@ proprietary engine plugins, or commercial asset packs.
 ![Native A site, captured in Godot on Windows](docs/a-site.png)
 ![Roofed upper tunnels, captured in Godot on Windows](docs/tunnels.png)
 
-Actual native-renderer screenshots, with staged camera positions for map review.
+Actual native 0.2 renderer screenshots, with staged camera positions for map review.
 These are not concept art or a claimed continuous gameplay recording.
 
 ## Play locally
