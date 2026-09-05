@@ -4,6 +4,10 @@ An experimental **Sol + Astra run**: a browser tactical FPS inspired by
 **Counter-Strike**, built with Rust, WebAssembly, Bevy and Blender.
 An independent AI-assisted development experiment—not affiliated with Valve.
 
+A separate **open-source native desktop version** is being developed in
+[native-godot](native-godot/README.md), using Godot and one original
+Dust2-inspired map. It does not replace this browser game.
+
 **[Play in your browser](https://soetang.github.io/dustline-field-trials/)** ·
 [Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905) ·
 [Download the clip](docs/media/gameplay.webm)

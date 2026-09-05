@@ -5,6 +5,8 @@
 /artifacts/
 /web/
 /_site/
+/native-godot/.godot/
+/native-godot/builds/
 __pycache__/
 *.pyc
 .env
