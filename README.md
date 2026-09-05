@@ -5,15 +5,18 @@ An experimental **Sol + Astra run**: a browser tactical FPS inspired by
 An independent AI-assisted development experiment—not affiliated with Valve.
 
 **[Play in your browser](https://soetang.github.io/dustline-field-trials/)** ·
-[Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html) ·
+[Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905) ·
 [Download the clip](docs/media/gameplay.webm)
 
 ![Dustline arena and original operator models, captured in the actual game](docs/media/dustline-spawn.png)
 
-[![A second view from the playable arena; click to watch gameplay](docs/media/dustline-lane.png)](https://soetang.github.io/dustline-field-trials/watch.html)
+[![A second view from the playable arena; click to watch gameplay](docs/media/dustline-lane.png)](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905)
 
-Actual browser captures, not concept art. The silent recording uses Performance
-mode on a software renderer; its frame rate is not a gaming-PC benchmark.
+Actual browser captures, not concept art. The new 30-second, silent recording
+uses Performance mode with hardware-accelerated Windows Chrome and smooth
+automated mouse/keyboard input. The saved video is 25 FPS, about 3.5 MiB, and
+includes movement, firing and the detailed weapon models. It is not a performance
+guarantee for other devices. The earlier choppy software-rendered clip is replaced.
 
 ## What is playable?
 
