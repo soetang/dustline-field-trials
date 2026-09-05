@@ -1,0 +1,56 @@
+name: Build and publish playable game
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen*
+            target
+          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Install pinned Rust and WebAssembly target
+        run: rustup show
+      - name: Install matching binding generator
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -q '0.2.127'; then
+            cargo install wasm-bindgen-cli --version 0.2.127 --locked
+          fi
+      - name: Build and verify source and release
+        run: npm run build
+      - name: Full seeded AI simulation playtest
+        run: bash scripts/playtest-ai.sh
+      - name: Export only the current release and licensed assets
+        run: node scripts/export-site.js
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

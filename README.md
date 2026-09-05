@@ -6,7 +6,15 @@ Original code and procedural art are **MIT licensed**. External textures are **C
 
 ## Play
 
-Serve this directory with any static web server:
+The public browser version is published to
+**https://soetang.github.io/dustline-field-trials/** by the GitHub Pages workflow.
+Use a desktop browser with WebGL2, hardware acceleration, a mouse and keyboard.
+There is no account, installation, backend server, or multiplayer service.
+The initial engine download is approximately 58 MB before HTTP compression.
+
+For local development, first [build the client](#build-the-bevy-client).
+
+Then serve this directory with any static web server:
 
 ```bash
 python3 -m http.server 8765
@@ -43,7 +51,8 @@ For the expanded map, try both side routes as well as mid. Check that attackers 
 The repository pins Rust 1.95 with the WebAssembly target. Install `wasm-bindgen-cli` 0.2.127, then run:
 
 ```bash
-bash scripts/build-wasm.sh
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
+npm run build
 ```
 
 Generated browser files are written to unique `web/builds/release-*` directories. `web/current.json` is updated only after a complete build, so a refresh during development cannot mix JavaScript and WebAssembly from different releases. Keep the release directory, its `snippets/` subdirectory, and the manifest together when copying the game to a static server.
@@ -57,10 +66,23 @@ If startup fails, the error panel shows the specific cause and a retry button. U
 Fast checks, without starting the renderer:
 
 ```bash
-bash scripts/check.sh
+bash scripts/check.sh --source-only
 ```
 
 These cover map connectivity, spawn separation/occlusion, every bot route to both sites, collision, weapon and economy rules, wall occlusion and headshots, bomb recovery and defusal, scored round resets, a complete autonomous match, HUD bindings, texture integrity, and every JavaScript function imported by the published WebAssembly module. The fast grid raycaster is compared against an exhaustive geometry reference for 2,000 deterministic rays.
+
+After building, run `npm test` as well to validate the published JavaScript/Wasm
+pair, HUD bindings and texture checksums. `--source-only` does not require a release.
+
+## Publish a browser site
+
+Push to `main` to build and deploy through `.github/workflows/pages.yml`.
+For a fork, enable **Settings → Pages → Source: GitHub Actions** first.
+The first build compiles Bevy and takes longer; subsequent builds reuse a cache.
+`node scripts/export-site.js` creates a static `_site` folder from the current
+local release. It copies only that release, licensed runtime assets and notices;
+old builds, private files and authoring tools are excluded. The website root
+opens the 3D client, with the older prototype at `classic.html`.
 
 After Rust rendering or browser-bridge changes, also run `cargo check --target wasm32-unknown-unknown --offline`. This catches integration/type errors without a full release build (fast once dependencies are cached).
 

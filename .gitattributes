@@ -1,0 +1,3 @@
+licenses/** linguist-vendored -whitespace
+assets/models/*.glb binary
+assets/textures/*.jpg binary

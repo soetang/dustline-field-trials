@@ -122,6 +122,7 @@ fn main() {
         repositions,
         investigations
     );
+    std::fs::create_dir_all("artifacts").unwrap();
     std::fs::write("artifacts/ai-playtest.json", report).unwrap();
     println!(
         "24 complete matches; {plants} plants, {defuses} defuses. Collision/finite-state checks passed. Report: artifacts/ai-playtest.json"
