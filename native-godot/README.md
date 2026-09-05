@@ -9,11 +9,20 @@ The existing Rust/Bevy browser game stays unchanged in the parent folder and on
 GitHub Pages. This project does not require a browser, Unreal, Epic account,
 proprietary engine plugins, or commercial asset packs.
 
+![Native A site, captured in Godot on Windows](docs/a-site.png)
+![Roofed upper tunnels, captured in Godot on Windows](docs/tunnels.png)
+
+Actual native-renderer screenshots, with staged camera positions for map review.
+These are not concept art or a claimed continuous gameplay recording.
+
 ## Play locally
 
 On the configured Windows machine, double-click **Play Windows.cmd** in this
 folder. It uses the standalone build if available, otherwise the portable Godot
 installation. Or import `project.godot` in Godot 4.7.2 and press **F6/F5** to run.
+
+The default renderer is **Forward+ / Vulkan**. If the GPU or driver has trouble,
+use **Play Windows - Compatibility.cmd** for the lighter OpenGL renderer.
 
 For Linux/WSL development, from the repository root:
 
@@ -72,6 +81,26 @@ networking, exact Dust2 dimensions, Valve art, or recorded weapon sounds.
 ```sh
 bash native-godot/tools/check.sh
 ```
+
+To produce standalone Windows and Linux packages (close running local builds
+before rebuilding):
+
+```sh
+bash native-godot/tools/setup.sh --templates  # first time: 1.28 GB official archive
+bash native-godot/tools/build.sh
+```
+
+Outputs are `builds/windows/DustlineNative.exe` (keep its `.pck` beside it) and
+`builds/linux/DustlineNative.x86_64`. The archive is not shipped with the game.
+Export templates and the native engine have already been installed on the
+configured local machine. No Unreal/Epic software was installed.
+
+Local verification: **107/107 checks passed**, including a live bot round with
+over 550 metres of combined travel and 36 shots. Windows Forward+ / Vulkan
+also passed the rendered controls test on an RTX 2060: about 9 metres of actual
+input-driven movement, eight shots and a completed reload. That short test is
+not a frame-rate guarantee or a human difficulty assessment. Linux packages
+have been smoke-tested headlessly, not visually on a Linux desktop.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
 suite: all key map routes, body clearance, buy freeze, real input movement,

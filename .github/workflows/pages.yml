@@ -2,6 +2,9 @@ name: Build and publish playable game
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'native-godot/**'
+      - '.github/workflows/native.yml'
   workflow_dispatch:
 permissions:
   contents: read
