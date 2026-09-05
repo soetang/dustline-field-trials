@@ -8,6 +8,12 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const {launchBrowser}=require('./browser-options');
 const {steeringStep}=require('./capture-steering');
+// Reuse the recorder from the pinned Playwright install, but start it only
+// after shader warmup. Capturing loading frames needlessly slows first launch.
+const core=path.dirname(require.resolve('playwright-core/package.json'));
+const {VideoRecorder}=require(path.join(core,'lib/server/videoRecorder.js'));
+const {registry}=require(path.join(core,'lib/server/registry/index.js'));
+const {jpegjs}=require(path.join(core,'lib/utilsBundle.js'));
 const root = path.resolve(__dirname,'..','_site');
 const prefix = '/dustline-field-trials/';
 const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.wasm':'application/wasm','.glb':'model/gltf-binary','.jpg':'image/jpeg','.json':'application/json'};
@@ -49,29 +55,17 @@ function clearLine(map,a,b,radius=0) {
   }
   return true;
 }
-module.exports={route,clearLine,server,prefix};
-if(require.main===module)(async()=>{
-  let browser,context,page,watchdog;
+async function recordGameplay(page) {
+  const context=page.context(),failures=[];
   fs.mkdirSync('artifacts/video-raw',{recursive:true});
   const output=fs.mkdtempSync('artifacts/video-raw/session-');
-  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const failures=[];
+  const raw=path.join(output,'full-session.webm');
+  let recorder,cdp,videoSize;
+  const onError=error=>failures.push(error.message);
+  const onResponse=response=>{if(response.status()>=400)failures.push(response.status()+' '+response.url());};
+  page.on('pageerror',onError);page.on('response',onResponse);
   try {
-    browser=await launchBrowser(chromium);
-    context=await browser.newContext({viewport:{width:960,height:640},deviceScaleFactor:Number(process.env.TEST_DPR || 1),recordVideo:{dir:output,size:{width:960,height:640}}});
-    page=await context.newPage();
-    watchdog=setTimeout(()=>browser.close(),300000);watchdog.unref();
-    page.setDefaultTimeout(30000);
-    await page.addInitScript(()=>{
-      localStorage.setItem('desert-strike-settings',JSON.stringify({quality:'low'}));
-      document.addEventListener('mousemove',e=>{if(e.isTrusted)e.stopImmediatePropagation();},true);
-    });
-    page.on('pageerror',e=>failures.push(e.message));
-    page.on('response',r=>{if(r.status()>=400)failures.push(`${r.status()} ${new URL(r.url()).pathname}`);});
-    const videoEpoch=Date.now();
-    await page.goto(`http://127.0.0.1:${server.address().port}${prefix}`,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.desertStrike?.getState(),null,{timeout:90000});
-    await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:60000});
+    await page.bringToFront();
     const renderer=await page.evaluate(()=>{
       const gl=document.getElementById('bevy-canvas').getContext('webgl2');
       const debug=gl.getExtension('WEBGL_debug_renderer_info');
@@ -79,7 +73,9 @@ if(require.main===module)(async()=>{
     });
     console.log('Recording renderer:',renderer);
     await page.waitForTimeout(1500);
-    await page.locator('#deploy').click();
+    await page.locator('#sensitivity').evaluate(input=>{input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));});
+    if(!(await page.evaluate(()=>window.desertStrike.getState().started)))await page.locator('#deploy').click();
+    else if(await page.locator('#pause').isVisible())await page.locator('#resume').click();
     await page.waitForFunction(()=>document.pointerLockElement?.id==='bevy-canvas');
     const get=()=>page.evaluate(()=>window.desertStrike.getState());
     await page.keyboard.press('F8');
@@ -108,7 +104,21 @@ if(require.main===module)(async()=>{
     })()`);
     const start=await get();
     let waypoints=route(start.map,start,[9,26]);
-    const clipStart=(Date.now()-videoEpoch)/1000;
+    const stamps=[];
+    cdp=await context.newCDPSession(page);
+    cdp.on('Page.screencastFrame',event=>{
+      const frame=Buffer.from(event.data,'base64');
+      if(!recorder){
+        const decoded=jpegjs.decode(frame,{useTArray:true});
+        videoSize={width:decoded.width,height:decoded.height};
+        recorder=new VideoRecorder(registry.findExecutable('ffmpeg').executablePath(),{outputFile:raw,...videoSize});
+      }
+      stamps.push(event.metadata.timestamp);
+      recorder.writeFrame(frame,event.metadata.timestamp);
+      cdp.send('Page.screencastFrameAck',{sessionId:event.sessionId}).catch(()=>{});
+    });
+    await cdp.send('Page.startScreencast',{format:'jpeg',quality:90,maxWidth:960,maxHeight:640,everyNthFrame:1});
+    const clipStart=0;
     console.log('Capturing live movement, aiming and firing…');
     const deadline=Date.now()+35000;
     let fired=false,travel=0,last=start;
@@ -139,8 +149,12 @@ if(require.main===module)(async()=>{
       await page.mouse.down();await page.waitForTimeout(900);await page.mouse.up();
       await page.keyboard.press('KeyR');await page.waitForTimeout(2200);
     }
-    const clipEnd=(Date.now()-videoEpoch)/1000;
+    await cdp.send('Page.stopScreencast');
+    cdp.removeAllListeners('Page.screencastFrame');
+    assert.ok(stamps.length>1,'Browser must deliver actual video frames');
+    const clipEnd=stamps.at(-1)-stamps[0];
     const timing=await page.evaluate(()=>{window.captureDriver.active=false;return window.captureDriver.frames;});
+    await recorder.stop();recorder=null;
     await page.keyboard.press('F8');
     await page.waitForFunction(()=>document.body.classList.contains('screenshot-view'));
     await page.waitForTimeout(500);
@@ -149,19 +163,38 @@ if(require.main===module)(async()=>{
     assert.ok(travel>3,'Recording must include real movement');
     assert.deepEqual(failures,[],'Exported site must not have missing assets or runtime errors');
     const release=await page.evaluate(()=>window.desertStrike.release);
-    const video=page.video();
-    await context.close();context=null;
-    const raw=path.join(output,'full-session.webm');
-    await video.saveAs(raw);
     const sorted=timing.slice().sort((a,b)=>a-b);
     const cadence={frames:timing.length,averageFps:1000*timing.length/timing.reduce((a,b)=>a+b,0),p95FrameMs:sorted[Math.floor(sorted.length*.95)],longFrames:timing.filter(ms=>ms>100).length};
-    const report={clipStart,clipEnd,travel,shots:finish.shots-start.shots,seed:finish.seed,release,renderer,cadence,quality:'Performance; real-time browser rendering; silent',raw,directory:output};
+    const report={clipStart,clipEnd,travel,shots:finish.shots-start.shots,seed:finish.seed,release,renderer,videoSize,cadence,quality:'Performance; real-time browser rendering; silent',raw,directory:output};
     fs.writeFileSync(path.join(output,'capture.json'),JSON.stringify(report,null,2));
     fs.writeFileSync('artifacts/video-raw/capture.json',JSON.stringify(report,null,2));
     console.log(`Saved review-only screenshots and raw recording in ${output}. Movement ${travel.toFixed(1)}m; clip ${clipStart.toFixed(1)}–${clipEnd.toFixed(1)}s.`,cadence);
   } finally {
-    clearTimeout(watchdog);
-    if(context)await context.close();if(browser)await browser.close();
+    if(cdp){await cdp.send('Page.stopScreencast').catch(()=>{});cdp.removeAllListeners('Page.screencastFrame');}
+    if(recorder)await recorder.stop();
+    page.off('pageerror',onError);page.off('response',onResponse);
+  }
+}
+module.exports={route,clearLine,server,prefix,recordGameplay};
+if(require.main===module)(async()=>{
+  let browser,watchdog;
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try {
+    browser=await launchBrowser(chromium);
+    watchdog=setTimeout(()=>browser.close(),420000);watchdog.unref();
+    const page=await browser.newPage({viewport:{width:960,height:640},deviceScaleFactor:Number(process.env.TEST_DPR || 1)});
+    page.setDefaultTimeout(30000);
+    await page.addInitScript(()=>{
+      localStorage.setItem('desert-strike-settings',JSON.stringify({quality:'low'}));
+      document.addEventListener('mousemove',event=>{if(event.isTrusted)event.stopImmediatePropagation();},true);
+    });
+    await page.goto('http://127.0.0.1:'+server.address().port+prefix,{waitUntil:'domcontentloaded'});
+    await page.waitForFunction(()=>window.desertStrike?.getState(),null,{timeout:90000});
+    console.log('Engine started; waiting for weapon assets before recording.');
+    await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:180000});
+    await recordGameplay(page);
+  }finally{
+    clearTimeout(watchdog);if(browser)await browser.close();
     await new Promise(resolve=>server.close(resolve));
   }
-})().catch(e=>{console.error(e);process.exitCode=1;});
+})().catch(error=>{console.error(error);process.exitCode=1;});
