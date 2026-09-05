@@ -242,6 +242,14 @@ impl Map {
             cell = previous[cell.1][cell.0].unwrap();
         }
         result.push_back(to);
+        // A path starts at an arbitrary actor position, not the cell centre.
+        // First recenter if heading directly to the next cell would clip a wall.
+        if result
+            .front()
+            .is_some_and(|next| !self.walkable_segment(from, *next))
+        {
+            result.push_front(Point::new(start.0 as f32 + 0.5, start.1 as f32 + 0.5));
+        }
         result
     }
     pub fn walkable_segment(&self, from: Point, to: Point) -> bool {

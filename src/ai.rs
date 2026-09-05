@@ -197,6 +197,51 @@ mod tests {
         assert!(g.bomb.defuse < 0.1, "A real handoff must restart defusing");
     }
     #[test]
+    fn route_recenters_before_a_corner_and_bot_can_escape_it() {
+        let mut g = arena();
+        g.map.tiles[21][21] = 1;
+        let from = Point::new(20.65, 20.9);
+        let goal = Point::new(23.5, 20.5);
+        assert!(g.map.can_stand(from));
+        assert!(!g.map.walkable_segment(from, Point::new(21.5, 20.5)));
+        let path = g.map.path(from, goal);
+        assert_eq!(path.front(), Some(&Point::new(20.5, 20.5)));
+        g.bots[0].pos = from;
+        g.bots[0].path = path;
+        g.bots[0].intent = Intent::Advance;
+        for _ in 0..80 {
+            g.move_bot(0, 0.05);
+            assert!(g.map.can_stand(g.bots[0].pos));
+        }
+        assert!(g.bots[0].pos.distance(goal) < 0.2);
+    }
+    #[test]
+    fn travel_pace_is_close_to_player_speed_and_advancing_bots_scan() {
+        let mut g = arena();
+        g.bots[0].path = VecDeque::from([Point::new(20., 30.)]);
+        let start = g.bots[0].pos;
+        g.clock = 1.;
+        for _ in 0..20 {
+            g.move_bot(0, 0.05);
+        }
+        assert!((3.1..3.4).contains(&start.distance(g.bots[0].pos)));
+        assert!(
+            angle_delta(g.bots[0].yaw, PI).abs() > 0.2,
+            "An advancing bot should scan beside its route"
+        );
+        g.bots[0].contact = Some(Contact {
+            pos: Point::new(20., 30.),
+            ttl: 3.,
+        });
+        for _ in 0..20 {
+            g.move_bot(0, 0.05);
+        }
+        assert!(
+            angle_delta(g.bots[0].yaw, PI).abs() < 0.01,
+            "Contact should take priority over idle scanning"
+        );
+    }
+    #[test]
     fn path_smoothing_never_cuts_a_blocked_corner() {
         let mut g = arena();
         g.map.tiles[21][21] = 1;
@@ -503,7 +548,7 @@ impl Game {
                     let speed = if self.bots[i].target.is_some() {
                         1.75
                     } else {
-                        2.25
+                        3.25
                     };
                     let step = (dt * speed).min(d);
                     let mut dx = (next.x - p.x) / d * step;
@@ -517,13 +562,15 @@ impl Game {
                     }
                     self.map.move_by(&mut self.bots[i].pos, dx, dz);
                     self.bots[i].moving = p.distance(self.bots[i].pos) > 0.002;
-                    if !self.bots[i].moving {
+                    // Sliding sideways along a wall is not route progress.
+                    if d - self.bots[i].pos.distance(next) < step * 0.12 {
                         self.bots[i].stuck += dt;
                     } else {
                         self.bots[i].stuck = 0.;
                     }
                     if self.bots[i].stuck > 0.8 {
                         self.bots[i].path.clear();
+                        self.bots[i].tactical_goal = None;
                         self.bots[i].tactic_time = 0.;
                         self.bots[i].think = 0.;
                         self.bots[i].stuck = 0.;
@@ -547,11 +594,10 @@ impl Game {
         } else {
             PLAYER_SPAWN
         };
-        let sweep = if self.bots[i].moving
-            || self.bots[i].target.is_some()
-            || self.bots[i].contact.is_some()
-        {
+        let sweep = if self.bots[i].target.is_some() || self.bots[i].contact.is_some() {
             0.
+        } else if self.bots[i].moving {
+            (self.clock * 0.9 + i as f32 * 1.3).sin() * 0.38
         } else {
             (self.clock * 0.65 + i as f32).sin() * 0.55
         };
