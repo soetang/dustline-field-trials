@@ -10,7 +10,7 @@ const HUD = preload("res://scripts/hud.gd")
 const Objective = preload("res://scripts/objective.gd")
 const Combat = preload("res://scripts/combat.gd")
 const Spectator = preload("res://scripts/spectator.gd")
-const BUILD := "native-0.3-combat"
+const BUILD := "native-0.4-operators"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld

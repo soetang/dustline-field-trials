@@ -1,0 +1,49 @@
+{
+  "build": "native-0.3-combat",
+  "engine": "4.7.2-stable (official)",
+  "gpu": "NVIDIA GeForce RTX 2060 with Max-Q Design",
+  "label": "0.3-baseline",
+  "os": "Windows",
+  "renderer": "forward_plus",
+  "scene_nodes": 2957,
+  "views": [
+    {
+      "draw_calls": 3568.0,
+      "frame_ms_max": 10.347,
+      "frame_ms_p50": 6.548,
+      "frame_ms_p95": 8.91,
+      "frames": 449,
+      "mean_fps": 149.301822779069,
+      "rendered_objects": 3747.0,
+      "rendered_primitives": 129730.0,
+      "seconds": 3.007331,
+      "view": "ct"
+    },
+    {
+      "draw_calls": 334.0,
+      "frame_ms_max": 7.686,
+      "frame_ms_p50": 2.525,
+      "frame_ms_p95": 4.034,
+      "frames": 1128,
+      "mean_fps": 375.765897845642,
+      "rendered_objects": 462.0,
+      "rendered_primitives": 68438.0,
+      "seconds": 3.001869,
+      "view": "a-site"
+    },
+    {
+      "draw_calls": 3443.0,
+      "frame_ms_max": 231.844,
+      "frame_ms_p50": 7.62,
+      "frame_ms_p95": 11.871,
+      "frames": 342,
+      "mean_fps": 113.900109603877,
+      "rendered_objects": 3893.0,
+      "rendered_primitives": 175938.0,
+      "seconds": 3.002631,
+      "view": "tunnels"
+    }
+  ],
+  "vsync": 0,
+  "window": "(1280, 720)"
+}

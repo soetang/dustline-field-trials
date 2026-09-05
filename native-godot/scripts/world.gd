@@ -12,6 +12,7 @@ const FLOOR_NORMAL = preload("res://assets/textures/concrete_floor_nor_gl_1k.jpg
 const FLOOR_ARM = preload("res://assets/textures/concrete_floor_arm_1k.jpg")
 var materials: Dictionary = {}
 var rng := RandomNumberGenerator.new()
+var batching: Dictionary = {}
 
 func material(color: Color, metal: float = 0.0) -> StandardMaterial3D:
 	var key := str(color) + str(metal)
@@ -100,6 +101,51 @@ func _ready() -> void:
 		crate(Layout.COVERS[index], index)
 	site("A", Layout.SITE_A, Color("db7a39"))
 	site("B", Layout.SITE_B, Color("db7a39"))
+	batch_static_boxes()
+
+func batch_static_boxes() -> void:
+	# Box details share a unit cube, but are split by material and 8 m region.
+	# This keeps culling local instead of drawing the entire map as one batch.
+	# Only startup visuals are collected: collision bodies and later effects stay
+	# independent, and transforms are read after arch/door rotations are complete.
+	var groups: Dictionary = {}
+	var unit := BoxMesh.new()
+	unit.size = Vector3.ONE
+	var count := 0
+	var inverse := global_transform.affine_inverse()
+	var bodies_before := find_children("*", "StaticBody3D", true, false).size()
+	for instance in find_children("*", "MeshInstance3D", true, false):
+		if not instance.mesh is BoxMesh or instance.mesh.size.length() > 32: continue
+		var transform: Transform3D = inverse * instance.global_transform
+		transform.basis = transform.basis * Basis.from_scale(instance.mesh.size)
+		var mat: Material = instance.material_override
+		var key := "%d/%d/%d/%d" % [mat.get_instance_id(), floori(transform.origin.x / 8), floori(transform.origin.z / 8), instance.cast_shadow]
+		if not groups.has(key): groups[key] = {"material": mat, "transforms": [], "shadow": instance.cast_shadow}
+		groups[key].transforms.append(transform)
+		count += 1
+		instance.get_parent().remove_child(instance)
+		instance.queue_free()
+	for key in groups:
+		var group: Dictionary = groups[key]
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.mesh = unit
+		multi.instance_count = group.transforms.size()
+		for i in group.transforms.size(): multi.set_instance_transform(i, group.transforms[i])
+		var instance := MultiMeshInstance3D.new()
+		instance.multimesh = multi
+		instance.material_override = group.material
+		instance.cast_shadow = group.shadow
+		add_child(instance)
+	prune_empty(self)
+	batching = {"source_boxes": count, "batches": groups.size(), "bodies_before": bodies_before,
+		"bodies_after": find_children("*", "StaticBody3D", true, false).size()}
+
+func prune_empty(node: Node) -> void:
+	for child in node.get_children(): prune_empty(child)
+	if node != self and node.get_class() == "Node3D" and node.get_child_count() == 0:
+		node.get_parent().remove_child(node)
+		node.queue_free()
 
 func lighting() -> void:
 	var environment_node := WorldEnvironment.new()

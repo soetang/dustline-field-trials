@@ -4,6 +4,7 @@ extends CharacterBody3D
 const Layout = preload("res://scripts/layout.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
+const OperatorRig = preload("res://scripts/operator_rig.gd")
 var game: Node3D
 var team := 1
 var index := 0
@@ -37,7 +38,7 @@ var blocked_fire := 0.0
 var friendly_blocks := 0
 var replans := 0
 var model: Node3D
-var legs: Array[Node3D] = []
+var rig := OperatorRig.new()
 var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -54,11 +55,9 @@ func _ready() -> void:
 	add_child(collision)
 	var packed: PackedScene = Models.ASSETS["ct_operator" if team == 0 else "t_operator"]
 	model = packed.instantiate()
-	model.position.y = 1.05
 	add_child(model)
 	Models.prepare(model)
-	for node in model.find_children("leg_*", "Node3D", true, false):
-		if node.name.begins_with("leg_l") or node.name.begins_with("leg_r"): legs.append(node)
+	rig.setup(model)
 	rotation.y = 0 if team == 1 else PI
 	progress_at = position
 	think_left = index * 0.018
@@ -218,10 +217,11 @@ func _physics_process(dt: float) -> void:
 		else: stuck_time = 0
 		progress_at = position
 		progress_left = 0.4
-	for i in legs.size():
-		legs[i].rotation.x = sin(game.elapsed * 11.0 + i * PI) * desired.length() * 0.43
 	if not working_defuse and not working_plant and is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0 and see(target):
 		shoot()
+
+func _process(dt: float) -> void:
+	rig.animate(dt, self)
 
 func shoot() -> bool:
 	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0 or not see(target): return false
@@ -243,6 +243,7 @@ func shoot() -> bool:
 	blocked_fire = 0
 	game.fire_shot(self, eye(), direction, slot, deg_to_rad(0.75 + Vector2(velocity.x, velocity.z).length() * 0.23))
 	shots += 1
+	rig.on_shot()
 	ammo -= 1
 	cooldown = Weapons.SPECS[slot].interval
 	burst_left -= 1
@@ -259,6 +260,5 @@ func take_hit(damage: float, attacker: Node3D, headshot: bool = false) -> void:
 	hear(attacker.position)
 	if health <= 0:
 		collision_layer = 0
-		model.rotation.z = PI * 0.5
-		model.position.y = 0.2
+		velocity = Vector3.ZERO
 		game.killed(self, attacker, headshot)
