@@ -1,0 +1,13 @@
+{
+  "name": "dustline-field-trials",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "test": "bash scripts/check.sh",
+    "test:browser": "node tests/bevy-browser.js",
+    "test:classic": "node tests/classic-browser.js",
+    "serve": "python3 -m http.server 8765",
+    "build": "bash scripts/build-wasm.sh"
+  },
+  "devDependencies": { "playwright": "1.58.2" }
+}

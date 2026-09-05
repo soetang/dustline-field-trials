@@ -1,0 +1,17 @@
+{
+  "originalModels": {
+    "license": "MIT",
+    "source": "scripts/make-operators.py",
+    "files": ["models/ct_operator.glb", "models/t_operator.glb"]
+  },
+  "experimentalWeapons": {
+    "license": "MIT",
+    "source": "scripts/make-weapons.py",
+    "files": ["models/view_m4.glb", "models/view_ak.glb", "models/view_awp.glb", "models/view_deagle.glb"]
+  },
+  "textures": {
+    "license": "CC0-1.0",
+    "source": "assets/textures/sources.json",
+    "files": ["textures/concrete_floor_diff_1k.jpg", "textures/concrete_floor_nor_gl_1k.jpg", "textures/concrete_floor_arm_1k.jpg", "textures/concrete_wall_001_diff_1k.jpg", "textures/concrete_wall_001_nor_gl_1k.jpg", "textures/concrete_wall_001_arm_1k.jpg"]
+  }
+}

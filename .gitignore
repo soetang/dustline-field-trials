@@ -1,0 +1,13 @@
+/target/
+/node_modules/
+/.tools/
+*.log
+/artifacts/
+/web/
+/_site/
+__pycache__/
+*.pyc
+.env
+.env.*
+# Unused legacy experiment: provenance not documented; never redistribute.
+/assets/textures/sandstone-plaster.png

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#b79261">
+  <title>Dustline: Field Trials — classic prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="game-shell">
+    <canvas id="game" aria-label="Dustline classic game view"></canvas>
+
+    <section id="hud" aria-hidden="true">
+      <div class="topbar">
+        <div class="team ct"><span>CT</span><strong id="ct-score">0</strong></div>
+        <div class="round-info">
+          <small id="round-label">ROUND 1</small>
+          <strong id="round-timer">1:30</strong>
+          <span id="objective">DEFEND THE SITES</span>
+        </div>
+        <div class="team t"><strong id="t-score">0</strong><span>T</span></div>
+      </div>
+
+      <canvas id="minimap" width="220" height="170"></canvas>
+      <div id="killfeed"></div>
+      <div id="site-banner" hidden></div>
+      <div id="interaction"><span id="interaction-text"></span><i><b id="interaction-fill"></b></i></div>
+
+      <div class="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="scope" hidden aria-hidden="true"><i></i><b></b></div>
+      <div id="alive-count"></div>
+
+      <div class="bottom-hud">
+        <div class="vitals">
+          <div><span class="icon">+</span><strong id="health">100</strong></div>
+          <div><span class="icon shield">◆</span><strong id="armor">100</strong></div>
+        </div>
+        <div class="weapon-panel">
+          <div class="weapon-meta"><small id="weapon-name">M4A4</small><small id="money">$8,000</small></div>
+          <div><strong id="ammo">30</strong><span>/</span><span id="reserve">90</span></div>
+        </div>
+      </div>
+      <div class="controls-hint">WASD MOVE · SHIFT WALK · CLICK FIRE · RMB AIM · R RELOAD · E DEFUSE · B BUY · TAB SCORE</div>
+    </section>
+
+    <section id="buy-menu" hidden>
+      <header><span>CT BUY MENU</span><strong id="buy-money">$8,000</strong><small>PRESS B TO CLOSE</small></header>
+      <div class="buy-grid">
+        <article data-slot="1"><kbd>1</kbd><div class="gun-icon rifle">━╾</div><h3>M4A4</h3><p>Accurate · balanced</p><strong>$3,100</strong></article>
+        <article data-slot="2"><kbd>2</kbd><div class="gun-icon rifle wood">━╾</div><h3>AK-47</h3><p>Heavy · lethal</p><strong>$2,700</strong></article>
+        <article data-slot="3"><kbd>3</kbd><div class="gun-icon sniper">━━⊕╾</div><h3>AWP</h3><p>One shot · precise</p><strong>$4,750</strong></article>
+        <article data-slot="4"><kbd>4</kbd><div class="gun-icon pistol">⌐</div><h3>DESERT EAGLE</h3><p>Compact · powerful</p><strong>$700</strong></article>
+      </div>
+      <footer>BUY TIME <b id="buy-timer">18</b></footer>
+    </section>
+
+    <section id="menu" class="overlay">
+      <div class="brand">
+        <span class="eyebrow">TACTICAL FPS</span>
+        <h1>DUSTLINE<br><em>CLASSIC</em></h1>
+        <p>Fight across a sun-scorched, three-lane arena inspired by classic competitive bomb-defusal maps.</p>
+        <button id="play-button">DEPLOY</button>
+        <small>Best experienced with a mouse and keyboard</small>
+      </div>
+      <div class="map-card">
+        <span>OPERATION</span>
+        <strong>DUSTLINE</strong>
+        <div class="map-diagram" aria-hidden="true">
+          <i class="site-a">A</i><i class="site-b">B</i><i class="route r1"></i><i class="route r2"></i><i class="route r3"></i>
+        </div>
+        <p>Counter-Terrorists · Defend A and B</p>
+      </div>
+    </section>
+
+    <section id="pause" class="overlay compact" hidden>
+      <div>
+        <span class="eyebrow">GAME PAUSED</span>
+        <h2>RETURN TO FIGHT</h2>
+        <p>Click below to recapture the mouse.</p>
+        <button id="resume-button">RESUME</button>
+        <label class="setting">SENSITIVITY <input id="classic-sensitivity" type="range" min="0.3" max="2.5" step="0.1" value="1"></label>
+        <label class="setting">VOLUME <input id="classic-volume" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+      </div>
+    </section>
+
+    <section id="round-end" class="round-end" hidden>
+      <span id="winner-kicker">COUNTER-TERRORISTS WIN</span>
+      <strong id="winner-reason">ENEMY TEAM ELIMINATED</strong>
+    </section>
+
+    <div id="damage-vignette"></div>
+    <div id="flash"></div>
+    <section id="classic-scoreboard" hidden aria-label="Match scoreboard"><header>DUSTLINE <span>FIRST TO 5</span></header><table><thead><tr><th>OPERATOR</th><th>STATUS</th><th>K</th><th>D</th></tr></thead><tbody id="classic-score-rows"></tbody></table><footer>HOLD TAB · FRIENDLY FIRE OFF</footer></section>
+    <section id="classic-result" class="overlay compact" hidden><div><span class="eyebrow">OPERATION COMPLETE</span><h2 id="classic-result-title"></h2><p id="classic-result-stats"></p><button id="classic-play-again">PLAY AGAIN</button></div></section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
