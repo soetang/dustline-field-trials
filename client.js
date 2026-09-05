@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const canvas = $('bevy-canvas');
-  const touchMode = !!window.matchMedia?.('(pointer: coarse)').matches;
+  const touchMode = !!window.matchMedia?.('(pointer: coarse)').matches || Number(navigator.maxTouchPoints) > 0 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   let touch = null;
   const prices = [3100, 2700, 4750, 700], magazines = [30, 30, 10, 7];
   const ui = { started: false, paused: true, shop: false, screenshot: false, ready: false, commands: [], sensitivity: 1, volume: .6, quality: touchMode ? 'low' : 'standard', seed: Math.floor(Math.random() * 0xffffffff) || 1 };
@@ -56,8 +56,8 @@
     screenshotView(false);
     clearInput();
     initAudio(); ui.paused = false; ui.shop = false; show('pause', false); show('buy-menu', false);
-    canvas.focus({ preventScroll: true });
     if (touchMode) { showTouch(); return; }
+    canvas.focus({ preventScroll: true });
     try { await canvas.requestPointerLock(); } catch { pause(); text('pause-heading', 'CLICK TO REJOIN.'); }
   }
   function pause() {
@@ -108,7 +108,7 @@
       'Dustline: Field Trials test details',
       `Page: ${location.origin}${location.pathname}`,
       `Build: ${window.desertStrike.release || 'not loaded'}`,
-      `Match seed: ${state?.seed ?? ui.seed}; graphics: ${ui.quality}`,
+      `Match seed: ${state?.seed ?? ui.seed}; graphics: ${ui.quality}; input: ${touchMode ? 'touch' : 'mouse'}`,
       `Map: ${state?.map[0].length || '?'} × ${state?.map.length || '?'} metres`,
       `Browser: ${navigator.userAgent}`,
       `Canvas: ${canvas.width} × ${canvas.height}; recent frame: ${state?.fps.toFixed(1) || '?'} FPS`,
@@ -138,7 +138,13 @@
   });
   document.addEventListener('pointerlockerror', () => { if (!touchMode && ui.started && !ui.shop) pause(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
-  window.addEventListener('blur', pause);
+  window.addEventListener('blur', () => {
+    // Mobile browser chrome can transiently take focus without hiding the game.
+    // Always release controls, but use visibility/pagehide for mobile pausing.
+    clearInput();
+    if (!touchMode || document.hidden) pause();
+  });
+  window.addEventListener('pagehide', pause);
   window.addEventListener('contextmenu', event => event.preventDefault());
   document.addEventListener('keydown', event => {
     if (active() && !ui.shop && event.target.tagName !== 'INPUT') {

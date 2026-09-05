@@ -4,6 +4,13 @@ const fs=require('node:fs');
 module.exports=async(page,url,uiOnly)=>{
   const failures=[];page.on('pageerror',e=>failures.push(e.message));
   page.setDefaultTimeout(30000);
+  if(uiOnly)await page.addInitScript(()=>{
+    // Some touch devices report a fine primary pointer. Detection must also use
+    // touch capability, and tapping Deploy must not focus the canvas or lock it.
+    const match=window.matchMedia.bind(window);
+    window.matchMedia=q=>q==='(pointer: coarse)'?{matches:false}:match(q);
+    HTMLCanvasElement.prototype.focus=()=>{throw new Error('Touch deployment must not focus the canvas');};
+  });
   if(uiOnly)await page.route('**/boot.js',r=>r.fulfill({contentType:'application/javascript',body:''}));
   await page.goto(url,{waitUntil:'domcontentloaded'});
   if(uiOnly)await page.evaluate(s=>window.desertStrike.render(s),require('./client-state')());
@@ -65,6 +72,8 @@ module.exports=async(page,url,uiOnly)=>{
   console.log('Mobile: touch armory, aim toggle, firing and reload verified');
   await down(1,stick);await move(1,{x:stick.x,y:stick.y-25});
   await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  assert.equal(await page.locator('#pause').isVisible(),false,'Visible mobile focus changes must not open pause');
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
   await page.locator('#pause').waitFor({state:'visible'});await release();
   if(uiOnly){const s=await input();assert.equal(s.active,false);assert.equal(s.forward,0);assert.deepEqual(s.held,{});}
   await page.locator('#resume').tap();await page.locator('#touch-controls').waitFor({state:'visible'});

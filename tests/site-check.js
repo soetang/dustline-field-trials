@@ -11,6 +11,8 @@ const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
 assert.match(html,/<title>Dustline: Field Trials<\/title>/);
 assert.match(html,/href="\.\/classic.html"/);
 assert.doesNotMatch(html,/href="\.\/index.html"/);
+for (const [,file] of html.matchAll(/(?:src|href)="((?:client|touch-controls|boot|bevy)\.release-[\w-]+\.(?:js|css))"/g)) assert.ok(exists(file),`Missing versioned browser asset ${file}`);
+assert.match(html,/src="touch-controls\.release-[\w-]+\.js"/);
 assert.match(fs.readFileSync(path.join(root,'classic.html'),'utf8'),/id="game"/);
 assert.equal(fs.readdirSync(path.join(root,'web/builds')).length,1,'Publish only one immutable release');
 const release = JSON.parse(fs.readFileSync(path.join(root,'web/current.json'),'utf8'));

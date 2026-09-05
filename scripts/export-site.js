@@ -25,6 +25,17 @@ const html = fs.readFileSync(path.join(out,'bevy.html'),'utf8').replaceAll('./in
 fs.writeFileSync(path.join(out,'index.html'),html);
 fs.writeFileSync(path.join(out,'bevy.html'),html);
 fs.writeFileSync(path.join(out,'client.js'),fs.readFileSync(path.join(out,'client.js'),'utf8').replaceAll('./index.html','./classic.html'));
+// Couple HTML, CSS and input scripts to one release, too. A cached older
+// client.js must not silently put a freshly deployed iPhone UI into mouse mode.
+let versionedHtml=html;
+const version=path.basename(path.dirname(release.entry));
+for(const file of ['bevy.css','client.js','touch-controls.js','boot.js']) {
+  const name=file.replace(/(\.[^.]+)$/,`.${version}$1`);
+  fs.copyFileSync(path.join(out,file),path.join(out,name));
+  versionedHtml=versionedHtml.replaceAll(`"${file}"`,`"${name}"`);
+}
+fs.writeFileSync(path.join(out,'index.html'),versionedHtml);
+fs.writeFileSync(path.join(out,'bevy.html'),versionedHtml);
 copy(path.dirname(release.entry));
 const assets = JSON.parse(fs.readFileSync(path.join(root,'assets/manifest.json'),'utf8'));
 for (const [name, group] of Object.entries(assets)) {
