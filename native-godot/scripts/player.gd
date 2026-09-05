@@ -169,14 +169,18 @@ func reload_weapon() -> bool:
 	game.sound.play("reload", -2)
 	return true
 
-func take_hit(damage: float, attacker: Node3D) -> void:
+func take_hit(damage: float, attacker: Node3D, headshot: bool = false) -> void:
 	if health <= 0: return
+	game.combat.record(self, attacker, damage)
 	health = maxf(0, health - damage)
 	game.damage_flash = 0.35
 	game.sound.play("hit", -2)
 	if health <= 0:
 		collision_layer = 0
-		game.killed(self, attacker)
+		velocity = Vector3.ZERO
+		aimed = false
+		pending_fire = false
+		game.killed(self, attacker, headshot)
 
 func reset_at(at: Vector3) -> void:
 	position = at + Vector3.UP * 0.06

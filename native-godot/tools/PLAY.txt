@@ -1,4 +1,4 @@
-DUSTLINE NATIVE: COURTYARD — 0.2
+DUSTLINE NATIVE: COURTYARD — 0.3
 Experimental Sol + Astra run. Open-source, single-player tactical prototype.
 An original Dust2-inspired map, not the Valve map or an affiliated product.
 
@@ -12,6 +12,8 @@ until ROUND LIVE. You are CT: defend the sites and hold E to defuse the device.
 WASD move, mouse look, left click fire, right click aim/scope, R reload.
 Space jump, Shift walk, Ctrl crouch, B armory, 1-4 buy, Tab scoreboard.
 Escape pause, F11 fullscreen, F3 diagnostics.
+After death: follow living teammates. Left click / Space selects next;
+right click selects previous. Tab recalls the damage recap after it fades.
 F8 saves a screenshot without using an external screenshot shortcut.
 Pause > Open screenshots folder finds your captures.
 Pause > Copy feedback details copies the build, FPS, position and controls state.

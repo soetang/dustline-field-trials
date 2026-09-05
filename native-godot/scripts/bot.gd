@@ -244,16 +244,17 @@ func shoot() -> bool:
 	if burst_left <= 0:
 		burst_left = rng.randi_range(2, 4)
 		burst_pause = rng.randf_range(0.28, 0.65)
-	var distance: float = position.distance_to(game.player.position)
+	var distance: float = position.distance_to(game.view_position())
 	if distance < 55: game.sound.play(Weapons.SPECS[slot].model, -6.0 - distance * 0.35, 0.97)
 	return true
 
-func take_hit(damage: float, attacker: Node3D) -> void:
+func take_hit(damage: float, attacker: Node3D, headshot: bool = false) -> void:
 	if health <= 0: return
+	game.combat.record(self, attacker, damage)
 	health = maxf(0, health - damage)
 	hear(attacker.position)
 	if health <= 0:
 		collision_layer = 0
 		model.rotation.z = PI * 0.5
 		model.position.y = 0.2
-		game.killed(self, attacker)
+		game.killed(self, attacker, headshot)

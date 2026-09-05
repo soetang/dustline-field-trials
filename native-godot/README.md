@@ -15,6 +15,9 @@ proprietary engine plugins, or commercial asset packs.
 Actual native 0.2 renderer screenshots, with staged camera positions for map review.
 These are not concept art or a claimed continuous gameplay recording.
 
+Native 0.3 adds teammate spectating and a combat recap:
+![Native teammate spectator and damage recap, staged renderer test](docs/spectator.png)
+
 ## Play locally
 
 On the configured Windows machine, double-click **Play Windows.cmd** in this
@@ -52,6 +55,12 @@ seconds to defuse. First to five rounds wins.
 | Scoreboard / pause | Tab / Escape |
 | Fullscreen / diagnostics | F11 / F3 |
 | Save a screenshot directly | F8 |
+| Spectate next / previous teammate after death | Left click or Space / right click |
+
+After death, the camera follows living teammates, retracting at walls. It switches
+when the followed teammate dies and returns to your own view next round. Your
+damage recap fades after six seconds; hold Tab to recall it. Spectator health,
+ammo and radar highlight belong to the followed teammate, not your dead player.
 
 **Escape → Copy feedback details** puts build, renderer, FPS, position, weapon,
 health and shot statistics on the clipboard. Paste it with what felt wrong.
@@ -77,6 +86,10 @@ automatically. Sound is generated noise/tones; there is no recorded soundtrack.
 - Rifles are automatic; the AWP and Deagle require a new trigger press. Short
   clicks are queued until the next physics tick; aiming uses the current mouse
   input even when rendering runs at a different cadence.
+- Native 0.3 adds wall-safe teammate spectating, damage-exchange recaps, directional
+  hit cues, distinct elimination confirmation, living-team counts and a timed
+  weapon/headshot kill feed. Hit cues retain the original shot position; they do
+  not track an enemy through walls.
 
 This is a playable foundation, not CS2-level art or a finished competitive game.
 It is single-player with bots, not online multiplayer. The native gameplay is
@@ -104,7 +117,8 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The native suites include **114 core checks, 47 tactical checks, 12 input checks and four complete
+The native suites include **114 core checks, 47 tactical checks, 12 input checks,
+33 combat/spectator checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse
 ownership, teammate shot obstruction, burst movement and expiring radio contacts.
@@ -114,6 +128,9 @@ Windows Forward+ / Vulkan has also been playtested on an RTX 2060. Linux
 packages have been smoke-tested headlessly, not visually on a Linux desktop.
 Headless input tests exercise synthetic controller events without an OS cursor;
 the same input suite also runs in the actual Windows renderer with mouse capture.
+The combat suite uses real body/head bullet rays, verifies damage attribution,
+teammate-only camera cycling, sphere clearance at a solid wall, death transitions,
+pause and round reset. Renderer captures also exercise the spectator HUD.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
 suite: all key map routes, body clearance, buy freeze, real input movement,

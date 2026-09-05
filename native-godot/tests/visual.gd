@@ -73,6 +73,28 @@ func run() -> void:
 		game.player.pitch = asin(direction.normalized().y)
 		await frames(30)
 		await capture(view[0])
+	# Staged combat UI views. All poses and damage here are test fixtures.
+	game.player.health = 100
+	game.player.position = Layout.on_floor(Vector3(37, 0, 4))
+	game.player.rotation.y = 0
+	game.player.pitch = 0
+	game.bots[0].position = Layout.on_floor(Vector3(37, 0, -3))
+	game.bots[0].rotation.y = 0
+	game.bots[0].role = "SUPPORT"
+	game.bots[1].position = Layout.on_floor(Vector3(39, 0, -6))
+	game.bots[1].rotation.y = 0
+	game.bots[4].position = Layout.on_floor(Vector3(34, 0, -18))
+	game.player.take_hit(35, game.bots[4])
+	await frames(2)
+	await capture("combat-feedback")
+	game.bots[4].take_hit(29, game.player)
+	game.player.take_hit(120, game.bots[4], true)
+	await physics_frames(85)
+	await capture("spectator")
+	if not game.spectator.active or not game.spectator.camera.is_current():
+		printerr("NATIVE_VISUAL_FAILED spectator camera")
+		quit(1)
+		return
 	print("NATIVE_VISUAL_OK ", game.details())
 	game.queue_free()
 	await process_frame

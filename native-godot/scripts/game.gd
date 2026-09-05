@@ -8,7 +8,9 @@ const Weapons = preload("res://scripts/weapons.gd")
 const Sound = preload("res://scripts/sound.gd")
 const HUD = preload("res://scripts/hud.gd")
 const Objective = preload("res://scripts/objective.gd")
-const BUILD := "native-0.2-tactics"
+const Combat = preload("res://scripts/combat.gd")
+const Spectator = preload("res://scripts/spectator.gd")
+const BUILD := "native-0.3-combat"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -16,6 +18,8 @@ var player: FieldPlayer
 var sound: FieldSound
 var hud: Control
 var objective: FieldObjective
+var combat := Combat.new()
+var spectator: FieldSpectator
 var bots: Array[FieldBot] = []
 var paused := true
 var buy_open := false
@@ -41,7 +45,7 @@ var defuser: Node3D
 var defuse_progress := 0.0
 var defuse_last := 0.0
 var bomb_beep := 0.0
-var kill_feed: Array[String] = []
+var kill_feed: Array[Dictionary] = []
 var effects: Array[Node3D] = []
 var rng := RandomNumberGenerator.new()
 var diagnostics := false
@@ -70,6 +74,10 @@ func _ready() -> void:
 	objective = Objective.new()
 	objective.game = self
 	add_child(objective)
+	combat.game = self
+	spectator = Spectator.new()
+	spectator.game = self
+	add_child(spectator)
 	new_round()
 	set_paused(true)
 	print("DUSTLINE_READY ", BUILD, " | ", RenderingServer.get_current_rendering_method(), " | ", RenderingServer.get_video_adapter_name())
@@ -88,6 +96,13 @@ func configure_input() -> void:
 		InputMap.action_add_event(action, event)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if player.health <= 0 and has_gameplay_input():
+		if event.is_action_pressed("fire") or event.is_action_pressed("jump"):
+			spectator.cycle(1)
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("aim"):
+			spectator.cycle(-1)
+			get_viewport().set_input_as_handled()
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_ESCAPE:
@@ -113,6 +128,7 @@ func set_paused(value: bool) -> void:
 	if value:
 		buy_open = false
 		player.pending_fire = false
+		spectator.pending_step = 0
 		for action in ["fire", "aim", "forward", "back", "left", "right", "interact"]: Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if value or buy_open else Input.MOUSE_MODE_CAPTURED
 	if is_instance_valid(hud): hud.sync_menu()
@@ -145,6 +161,11 @@ func buy(index: int) -> bool:
 	return true
 
 func new_round() -> void:
+	spectator.reset()
+	combat.reset()
+	kill_feed.clear()
+	damage_flash = 0
+	hit_flash = 0
 	round_number += 1
 	phase = "BUY"
 	phase_left = 7.0
@@ -193,6 +214,7 @@ func _physics_process(dt: float) -> void:
 	banner_left = maxf(0, banner_left - dt)
 	hit_flash = maxf(0, hit_flash - dt)
 	damage_flash = maxf(0, damage_flash - dt)
+	combat.tick()
 	if phase == "BUY" and phase_left <= 0:
 		phase = "LIVE"
 		phase_left = 100.0
@@ -242,8 +264,9 @@ func fire_shot(shooter: Node3D, from: Vector3, direction: Vector3, slot: int, sp
 		if victim.has_method("take_hit") and victim.team != shooter.team:
 			var damage: float = Weapons.SPECS[slot].damage
 			var head_height := 0.98 if victim == player and player.crouched else 1.48
-			if result.position.y - victim.global_position.y > head_height: damage *= 3.4
-			victim.take_hit(damage, shooter)
+			var headshot: bool = result.position.y - victim.global_position.y > head_height
+			if headshot: damage *= 3.4
+			victim.take_hit(damage, shooter, headshot)
 			if shooter == player:
 				hits += 1
 				hit_flash = 0.11
@@ -272,18 +295,25 @@ func impact(at: Vector3, normal: Vector3) -> void:
 	get_tree().create_timer(8.0).timeout.connect(func():
 		if is_instance_valid(node): node.queue_free())
 
-func killed(victim: Node3D, attacker: Node3D) -> void:
+func actor_name(actor: Node3D) -> String:
+	return "YOU" if actor == player else ("CT %02d" if actor.team == 0 else "T %02d") % actor.index
+
+func view_position() -> Vector3:
+	return spectator.camera.global_position if spectator.active else player.camera.global_position
+
+func killed(victim: Node3D, attacker: Node3D, headshot: bool = false) -> void:
 	objective.drop(victim)
-	var killer_name := "YOU" if attacker == player else ("CT %02d" if attacker.team == 0 else "T %02d") % attacker.index
-	var victim_name := "YOU" if victim == player else ("CT %02d" if victim.team == 0 else "T %02d") % victim.index
-	kill_feed.push_front(killer_name + "   ›   " + victim_name)
+	combat.on_kill(victim, attacker, headshot)
+	kill_feed.push_front({"killer": actor_name(attacker), "victim": actor_name(victim), "slot": attacker.slot,
+		"headshot": headshot, "team": attacker.team, "personal": attacker == player or victim == player, "until": elapsed + 7.0})
 	if kill_feed.size() > 4: kill_feed.pop_back()
 	if attacker == player:
 		kills += 1
 		money += 300
 	if victim == player:
 		deaths += 1
-		notify("YOU ARE DOWN  /  YOUR SQUAD IS STILL FIGHTING", 6.0)
+		spectator.begin()
+		notify("YOU ARE DOWN  /  FOLLOWING YOUR SQUAD", 2.0)
 
 func plant(actor: Node3D) -> bool:
 	if paused or bomb_active or phase != "LIVE" or actor != objective.carrier or actor.health <= 0 or actor.team != 1 or objective.plant_progress < 3: return false
@@ -325,7 +355,7 @@ func notify(message: String, seconds: float = 2.5) -> void:
 	banner_left = seconds
 
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "position": str(player.position), "location": Layout.callout(player.position), "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "position": str(player.position), "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return
