@@ -7,12 +7,15 @@ const Bot = preload("res://scripts/bot.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Sound = preload("res://scripts/sound.gd")
 const HUD = preload("res://scripts/hud.gd")
-const BUILD := "native-0.1-courtyard"
+const Objective = preload("res://scripts/objective.gd")
+const BUILD := "native-0.2-tactics"
+var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
 var player: FieldPlayer
 var sound: FieldSound
 var hud: Control
+var objective: FieldObjective
 var bots: Array[FieldBot] = []
 var paused := true
 var buy_open := false
@@ -46,7 +49,9 @@ var silent_test := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	rng.seed = 512
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--seed="): match_seed = argument.trim_prefix("--seed=").to_int()
+	rng.seed = match_seed
 	configure_input()
 	world = World.new()
 	add_child(world)
@@ -62,6 +67,9 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.game = self
 	layer.add_child(hud)
+	objective = Objective.new()
+	objective.game = self
+	add_child(objective)
 	new_round()
 	set_paused(true)
 	print("DUSTLINE_READY ", BUILD, " | ", RenderingServer.get_current_rendering_method(), " | ", RenderingServer.get_video_adapter_name())
@@ -157,6 +165,7 @@ func new_round() -> void:
 		bot.position = Layout.on_floor(spawn) + Vector3.UP * 0.06
 		add_child(bot)
 		bots.append(bot)
+	objective.reset_round()
 	notify("ROUND %d  /  BUY & PREPARE" % round_number, 7.0)
 	if is_instance_valid(hud): hud.sync_menu()
 
@@ -258,6 +267,7 @@ func impact(at: Vector3, normal: Vector3) -> void:
 		if is_instance_valid(node): node.queue_free())
 
 func killed(victim: Node3D, attacker: Node3D) -> void:
+	objective.drop(victim)
 	var killer_name := "YOU" if attacker == player else ("CT %02d" if attacker.team == 0 else "T %02d") % attacker.index
 	var victim_name := "YOU" if victim == player else ("CT %02d" if victim.team == 0 else "T %02d") % victim.index
 	kill_feed.push_front(killer_name + "   ›   " + victim_name)
@@ -269,19 +279,23 @@ func killed(victim: Node3D, attacker: Node3D) -> void:
 		deaths += 1
 		notify("YOU ARE DOWN  /  YOUR SQUAD IS STILL FIGHTING", 6.0)
 
-func plant(at: Vector3) -> void:
-	if bomb_active or phase != "LIVE": return
-	if minf(at.distance_to(Layout.on_floor(Layout.SITE_A)), at.distance_to(Layout.on_floor(Layout.SITE_B))) > 5: return
+func plant(actor: Node3D) -> bool:
+	if paused or bomb_active or phase != "LIVE" or actor != objective.carrier or actor.health <= 0 or actor.team != 1 or objective.plant_progress < 3: return false
+	var at: Vector3 = actor.position
+	if minf(at.distance_to(Layout.on_floor(Layout.SITE_A)), at.distance_to(Layout.on_floor(Layout.SITE_B))) > 4.2: return false
 	bomb_active = true
 	bomb_at = Layout.on_floor(at)
 	bomb_left = 35.0
 	defuse_progress = 0
 	bomb_mesh = world.box(bomb_at + Vector3.UP * 0.18, Vector3(0.48, 0.32, 0.30), world.material(Color("434b3e")))
 	world.box(Vector3(0, 0.18, 0), Vector3(0.20, 0.025, 0.13), world.material(Color("f38b42")), false, bomb_mesh)
+	objective.on_planted()
 	notify("DEVICE PLANTED AT " + Layout.callout(at) + "  /  HOLD E TO DEFUSE", 5.0)
+	return true
 
 func defuse(actor: Node3D, dt: float) -> void:
 	if phase != "LIVE" or not bomb_active or actor.team != 0 or actor.health <= 0 or actor.position.distance_to(bomb_at) > 2.0: return
+	if Vector2(actor.velocity.x, actor.velocity.z).length() > 0.35: return
 	if is_instance_valid(defuser) and defuser != actor: return
 	defuser = actor
 	defuse_last = elapsed
@@ -305,7 +319,7 @@ func notify(message: String, seconds: float = 2.5) -> void:
 	banner_left = seconds
 
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "position": str(player.position), "location": Layout.callout(player.position), "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "position": str(player.position), "location": Layout.callout(player.position), "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return

@@ -70,6 +70,9 @@ automatically. Sound is generated noise/tones; there is no recorded soundtrack.
 - Radius-aware pathfinding and checked corner/strafe clearance. Bots follow
   routes, scan ahead, react to visible targets, remember/hear contacts, burst,
   reload, plant and defuse. Physics rays block sight and shots at walls.
+- Native 0.2 adds one bomb carrier, visible dropped-device recovery, timed and
+  interruptible plants, separate defuse/cover roles, and sight-based squad
+  backup calls. Bots settle for firing bursts and hold fire behind teammates.
 
 This is a playable foundation, not CS2-level art or a finished competitive game.
 It is single-player with bots, not online multiplayer. The native gameplay is
@@ -95,12 +98,14 @@ Outputs are `builds/windows/DustlineNative.exe` (keep its `.pck` beside it) and
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-Local verification: **107/107 checks passed**, including a live bot round with
-over 550 metres of combined travel and 36 shots. Windows Forward+ / Vulkan
-also passed the rendered controls test on an RTX 2060: about 9 metres of actual
-input-driven movement, eight shots and a completed reload. That short test is
-not a frame-rate guarantee or a human difficulty assessment. Linux packages
-have been smoke-tested headlessly, not visually on a Linux desktop.
+The native suites include **107 core checks, 47 tactical checks and four complete
+seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
+The tactical tests cover carrier death/recovery, plant interruption, human defuse
+ownership, teammate shot obstruction, burst movement and expiring radio contacts.
+The seeded checks measure sustained lack of navigation progress independently
+of the bots' own replan timer. These samples are not a general difficulty rating.
+Windows Forward+ / Vulkan has also been playtested on an RTX 2060. Linux
+packages have been smoke-tested headlessly, not visually on a Linux desktop.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
 suite: all key map routes, body clearance, buy freeze, real input movement,

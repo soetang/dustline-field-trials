@@ -114,7 +114,11 @@ func run() -> void:
 	var wall_hit: Dictionary = game.fire_shot(game.player, from, Vector3.LEFT, 0, 0)
 	check(not wall_hit.is_empty() and not wall_hit.collider.has_method("take_hit"), "Wall blocks hitscan ray")
 	game.player.position = Layout.on_floor(Layout.SITE_A) + Vector3.UP * 0.05
-	game.plant(Layout.on_floor(Layout.SITE_A))
+	game.player.velocity = Vector3.ZERO
+	var carrier: Node3D = game.objective.carrier
+	carrier.position = Layout.on_floor(Layout.SITE_A)
+	carrier.velocity = Vector3.ZERO
+	game.objective.try_plant(carrier, 3.0)
 	check(game.bomb_active, "Plant creates active objective at a site")
 	game.defuse(game.player, 2.0)
 	game.defuse(game.bots[0], 2.0)
@@ -131,6 +135,7 @@ func run() -> void:
 	game.phase = "LIVE"
 	game.phase_left = 100
 	game.player.health = 0 # Observe; no invulnerable human target changes combat.
+	game.player.collision_layer = 0
 	for i in 1800:
 		await physics_frame
 		if game.phase != "LIVE": break

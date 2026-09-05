@@ -142,6 +142,7 @@ func _process(dt: float) -> void:
 func fire() -> bool:
 	if cooldown > 0 or reload_left > 0 or health <= 0 or ammo <= 0 or game.phase != "LIVE":
 		return false
+	if game.bomb_active and game.defuser == self and game.defuse_progress > 0: return false
 	var spec: Dictionary = Weapons.SPECS[slot]
 	ammo -= 1
 	shot_count += 1
@@ -167,12 +168,15 @@ func take_hit(damage: float, attacker: Node3D) -> void:
 	health = maxf(0, health - damage)
 	game.damage_flash = 0.35
 	game.sound.play("hit", -2)
-	if health <= 0: game.killed(self, attacker)
+	if health <= 0:
+		collision_layer = 0
+		game.killed(self, attacker)
 
 func reset_at(at: Vector3) -> void:
 	position = at + Vector3.UP * 0.06
 	velocity = Vector3.ZERO
 	health = 100.0
+	collision_layer = 2
 	pitch = 0
 	rotation.y = PI
 	head.position.y = 1.62

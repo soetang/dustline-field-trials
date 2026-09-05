@@ -24,19 +24,23 @@ var path := PackedVector3Array()
 var path_goal := Vector3(999, 0, 999)
 var mission := Vector3.ZERO
 var look_goal := Vector3.ZERO
+var guard_look := Vector3.ZERO
+var role := "ATTACK"
 var route: Array[Vector3] = []
 var stuck_time := 0.0
 var progress_at := Vector3.ZERO
 var progress_left := 0.4
 var travel := 0.0
 var shots := 0
-var plant_progress := 0.0
+var blocked_fire := 0.0
+var friendly_blocks := 0
+var replans := 0
 var model: Node3D
 var legs: Array[Node3D] = []
 var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
-	rng.seed = 800 + index * 917
+	rng.seed = game.match_seed + game.round_number * 800 + index * 917
 	collision_layer = 4
 	collision_mask = 1 # Agents separate in steering; they never physically jam doorways.
 	floor_snap_length = 0.45
@@ -73,6 +77,8 @@ func set_mission() -> void:
 		mission = Layout.on_floor(anchors[index % 4])
 		var lanes := [Vector3(-33, 1.5, -9), Vector3(37, 3.5, -7), Vector3(1, 1.5, 14), Vector3(14, 2.0, 0)]
 		look_goal = lanes[index % 4]
+		guard_look = look_goal
+		role = "ANCHOR"
 
 func eye() -> Vector3:
 	return global_position + Vector3.UP * 1.52
@@ -106,18 +112,21 @@ func think() -> void:
 		last_seen = candidate.global_position
 		memory = 2.2
 		look_goal = last_seen + Vector3.UP * 1.3
+		game.objective.report_contact(self, last_seen)
 	else:
 		target = null
 	if memory > 0 or heard > 0:
 		look_goal = last_seen + Vector3.UP * 1.3
-	if game.bomb_active:
-		mission = game.bomb_at
-	elif team == 1 and not route.is_empty():
+	if not game.bomb_active and team == 1 and not route.is_empty():
 		if Vector2(position.x, position.z).distance_to(Vector2(mission.x, mission.z)) < 1.5:
 			route.pop_front()
 		if not route.is_empty(): mission = Layout.on_floor(route[0])
-	var destination := mission
-	if memory > 0 or heard > 0:
+	var job: Dictionary = game.objective.assignment(self)
+	role = str(job.role) if not job.is_empty() else ("CARRIER" if game.objective.carrier == self else ("ANCHOR" if team == 0 else "ATTACK"))
+	var destination: Vector3 = job.goal if not job.is_empty() else mission
+	if not job.is_empty(): guard_look = job.look
+	var committed_defuse: bool = role == "DEFUSE" and (target == null or position.distance_to(last_seen) > 5.0 or game.bomb_left < 9.0)
+	if (memory > 0 or heard > 0) and not committed_defuse:
 		destination = last_seen
 		if target != null and position.distance_to(last_seen) < 30:
 			# Short, checked strafes from cover; never continue driving into a wall.
@@ -127,20 +136,26 @@ func think() -> void:
 			if health < 32:
 				var retreat := position + (position - last_seen).normalized() * 4
 				if game.layout.segment_clear(position, retreat): destination = retreat
-	if game.bomb_active and team == 1 and position.distance_to(game.bomb_at) < 8 and memory <= 0:
-		destination = position # Cover the planted objective; don't stack on top of it.
-	if destination.distance_to(path_goal) > 1.5 or stuck_time > 0.7:
+	# A covering bot responds locally; it does not abandon the device to chase
+	# an old contact across the map. Attack routes resume when memory expires.
+	if role in ["COVER", "HOLD"] and target == null:
+		destination = job.goal
+	if destination.distance_to(path_goal) > 0.7 or stuck_time > 0.7:
 		path = game.layout.path(position, destination)
 		path_goal = destination
 		stuck_time = 0.0
+		replans += 1
 	if target == null and memory <= 0 and heard <= 0 and not path.is_empty():
 		look_goal = path[mini(3, path.size() - 1)] + Vector3.UP * 1.4
+	elif target == null and memory <= 0 and heard <= 0 and (team == 0 or game.bomb_active):
+		look_goal = guard_look
 
 func _physics_process(dt: float) -> void:
 	if game.paused or health <= 0 or game.phase != "LIVE": return
 	cooldown = maxf(0, cooldown - dt)
 	reaction = maxf(0, reaction - dt)
 	burst_pause = maxf(0, burst_pause - dt)
+	blocked_fire = maxf(0, blocked_fire - dt)
 	memory = maxf(0, memory - dt)
 	heard = maxf(0, heard - dt)
 	if reload_left > 0:
@@ -176,20 +191,21 @@ func _physics_process(dt: float) -> void:
 				var steering := (desired + away.normalized() * (0.85 - distance)).normalized()
 				if game.layout.segment_clear(position, position + steering * 0.65): desired = steering
 	var speed := 4.65 if target == null else 2.1
-	if team == 0 and game.bomb_active and position.distance_to(game.bomb_at) < 1.8:
-		if game.defuser == null or game.defuser == self:
-			desired = Vector3.ZERO
-			game.defuse(self, dt)
-	if team == 1 and not game.bomb_active and route.is_empty() and position.distance_to(mission) < 2.0:
+	var working_defuse: bool = role == "DEFUSE" and game.bomb_active and position.distance_to(game.bomb_at) < 1.8 and (target == null or position.distance_to(last_seen) > 5.0 or game.bomb_left < 9.0)
+	var working_plant: bool = game.objective.carrier == self and not game.bomb_active and route.is_empty() and position.distance_to(mission) < 2.0 and target == null
+	if working_defuse or working_plant:
 		desired = Vector3.ZERO
-		if target == null: plant_progress += dt
-		else: plant_progress = 0
-		if plant_progress >= 3.0: game.plant(position)
+	elif target != null and reaction <= 0 and burst_pause <= 0 and reload_left <= 0 and blocked_fire <= 0:
+		# Settle for a burst, then move during its pause instead of spraying while
+		# continuously shuffling. Friendly fire obstructions force a new peek.
+		desired = Vector3.ZERO
 	velocity.x = desired.x * speed
 	velocity.z = desired.z * speed
 	if not is_on_floor(): velocity.y -= 16 * dt
 	var before := position
 	move_and_slide()
+	if working_defuse: game.defuse(self, dt)
+	elif working_plant: game.objective.try_plant(self, dt)
 	travel += position.distance_to(before)
 	progress_left -= dt
 	if progress_left <= 0:
@@ -199,17 +215,27 @@ func _physics_process(dt: float) -> void:
 		progress_left = 0.4
 	for i in legs.size():
 		legs[i].rotation.x = sin(game.elapsed * 11.0 + i * PI) * desired.length() * 0.43
-	if is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0 and see(target):
+	if not working_defuse and not working_plant and is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0 and see(target):
 		shoot()
 
-func shoot() -> void:
+func shoot() -> bool:
+	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0 or not see(target): return false
 	if ammo <= 0:
 		reload_left = Weapons.SPECS[slot].reload
-		return
+		return false
 	# Aim is based on a currently visible target; wall hits still stop the ray.
 	var aim: Vector3 = target.global_position + Vector3.UP * rng.randf_range(1.05, 1.5)
 	var direction := (aim - eye()).normalized()
-	if (-global_basis.z).dot(direction) < 0.94: return
+	if (-global_basis.z).dot(Vector3(direction.x, 0, direction.z).normalized()) < 0.94: return false
+	var query := PhysicsRayQueryParameters3D.create(eye(), aim, 7, [get_rid()])
+	var first_hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if not first_hit.is_empty() and first_hit.collider.has_method("take_hit") and first_hit.collider.team == team:
+		blocked_fire = 0.45
+		cooldown = 0.08
+		friendly_blocks += 1
+		think_left = 0
+		return false
+	blocked_fire = 0
 	game.fire_shot(self, eye(), direction, slot, deg_to_rad(0.75 + Vector2(velocity.x, velocity.z).length() * 0.23))
 	shots += 1
 	ammo -= 1
@@ -220,6 +246,7 @@ func shoot() -> void:
 		burst_pause = rng.randf_range(0.28, 0.65)
 	var distance: float = position.distance_to(game.player.position)
 	if distance < 55: game.sound.play(Weapons.SPECS[slot].model, -6.0 - distance * 0.35, 0.97)
+	return true
 
 func take_hit(damage: float, attacker: Node3D) -> void:
 	if health <= 0: return
