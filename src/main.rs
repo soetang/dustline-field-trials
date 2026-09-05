@@ -11,8 +11,11 @@ use std::f32::consts::{FRAC_PI_2, PI};
 mod arena;
 mod environment;
 mod gameplay;
+#[cfg(all(feature = "offline-capture", target_arch = "wasm32"))]
+mod offline_capture;
 mod operators;
 mod rules;
+mod weapons;
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::window::CursorGrabMode;
 use gameplay::*;
@@ -88,6 +91,7 @@ struct Session {
     round: u32,
     hud_timer: f32,
     spectator: usize,
+    view_model_ready: bool,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -107,13 +111,14 @@ impl Default for Session {
             round: 1,
             hud_timer: 0.,
             spectator: 0,
+            view_model_ready: false,
         }
     }
 }
 fn main() {
     install_panic_hook();
-    App::new()
-        .insert_resource(ClearColor(Color::srgb(0.42, 0.61, 0.74)))
+    let mut app = App::new();
+    app.insert_resource(ClearColor(Color::srgb(0.42, 0.61, 0.74)))
         .insert_resource(GlobalAmbientLight {
             color: Color::srgb(0.72, 0.79, 0.84),
             brightness: 550.0,
@@ -150,14 +155,18 @@ fn main() {
                 simulate,
                 player_controller,
                 weapon_management,
+                weapons::select,
                 fire_weapon,
                 animate_scene,
+                weapons::animate,
                 operators::animate_muzzles,
                 sync_hud,
             )
                 .chain(),
-        )
-        .run();
+        );
+    #[cfg(all(feature = "offline-capture", target_arch = "wasm32"))]
+    offline_capture::install(&mut app);
+    app.run();
 }
 
 fn setup(
@@ -488,6 +497,10 @@ fn spawn_player(
     // disconnected posts read as little dark objects floating in the view.
     let sight_mesh = meshes.add(Cuboid::new(0.035, 0.10, 0.035));
     let muzzle_mesh = meshes.add(Sphere::new(0.065));
+    commands.insert_resource(weapons::FlashAssets {
+        mesh: muzzle_mesh.clone(),
+        material: flash.clone(),
+    });
 
     commands
         .spawn((
@@ -539,88 +552,96 @@ fn spawn_player(
                     Visibility::default(),
                 ))
                 .with_children(|weapon| {
-                    let layer = RenderLayers::layer(VIEW_MODEL_LAYER);
-                    weapon.spawn((
-                        WeaponPart(0),
-                        Mesh3d(receiver_mesh),
-                        MeshMaterial3d(gun_dark.clone()),
-                        Transform::default(),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        WeaponPart(1),
-                        Mesh3d(handguard_mesh),
-                        MeshMaterial3d(metal),
-                        Transform::from_xyz(-0.01, 0.015, -0.41),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        WeaponPart(2),
-                        Mesh3d(barrel_mesh),
-                        MeshMaterial3d(gun_dark.clone()),
-                        Transform::from_xyz(-0.01, 0.01, -0.82)
-                            .with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        WeaponPart(3),
-                        Mesh3d(sight_mesh.clone()),
-                        MeshMaterial3d(gun_dark.clone()),
-                        Transform::from_xyz(-0.01, 0.12, -0.21),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        WeaponPart(4),
-                        Mesh3d(sight_mesh),
-                        MeshMaterial3d(gun_dark.clone()),
-                        Transform::from_xyz(-0.01, 0.075, -1.1),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        Mesh3d(arm_mesh.clone()),
-                        MeshMaterial3d(glove.clone()),
-                        Transform::from_xyz(0.23, -0.15, 0.24)
-                            .with_rotation(Quat::from_rotation_y(-0.25)),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    weapon.spawn((
-                        Mesh3d(arm_mesh),
-                        MeshMaterial3d(glove),
-                        Transform::from_xyz(-0.2, -0.13, -0.2)
-                            .with_rotation(Quat::from_rotation_y(0.36)),
-                        layer.clone(),
-                        NotShadowCaster,
-                    ));
-                    for (part, size, position) in [
-                        (5, Vec3::new(0.14, 0.23, 0.32), Vec3::new(0.0, -0.02, 0.34)),
-                        (6, Vec3::new(0.1, 0.3, 0.16), Vec3::new(0.0, -0.20, -0.04)),
-                        (7, Vec3::new(0.095, 0.23, 0.12), Vec3::new(0.0, -0.18, 0.14)),
-                        (8, Vec3::new(0.11, 0.12, 0.38), Vec3::new(0.0, 0.19, -0.12)),
-                    ] {
-                        weapon.spawn((
-                            WeaponPart(part),
-                            Mesh3d(meshes.add(Cuboid::from_size(size))),
-                            MeshMaterial3d(gun_dark.clone()),
-                            Transform::from_translation(position),
-                            layer.clone(),
-                            NotShadowCaster,
-                        ));
-                    }
-                    weapon.spawn((
-                        MuzzleFlash,
-                        Mesh3d(muzzle_mesh),
-                        MeshMaterial3d(flash),
-                        Transform::from_xyz(-0.01, 0.01, -1.12),
-                        layer,
-                        NotShadowCaster,
-                        Visibility::Hidden,
-                    ));
+                    weapon
+                        .spawn((
+                            weapons::LegacyWeapon,
+                            Transform::default(),
+                            Visibility::Inherited,
+                        ))
+                        .with_children(|weapon| {
+                            let layer = RenderLayers::layer(VIEW_MODEL_LAYER);
+                            weapon.spawn((
+                                WeaponPart(0),
+                                Mesh3d(receiver_mesh),
+                                MeshMaterial3d(gun_dark.clone()),
+                                Transform::default(),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                WeaponPart(1),
+                                Mesh3d(handguard_mesh),
+                                MeshMaterial3d(metal),
+                                Transform::from_xyz(-0.01, 0.015, -0.41),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                WeaponPart(2),
+                                Mesh3d(barrel_mesh),
+                                MeshMaterial3d(gun_dark.clone()),
+                                Transform::from_xyz(-0.01, 0.01, -0.82)
+                                    .with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                WeaponPart(3),
+                                Mesh3d(sight_mesh.clone()),
+                                MeshMaterial3d(gun_dark.clone()),
+                                Transform::from_xyz(-0.01, 0.12, -0.21),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                WeaponPart(4),
+                                Mesh3d(sight_mesh),
+                                MeshMaterial3d(gun_dark.clone()),
+                                Transform::from_xyz(-0.01, 0.075, -1.1),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                Mesh3d(arm_mesh.clone()),
+                                MeshMaterial3d(glove.clone()),
+                                Transform::from_xyz(0.23, -0.15, 0.24)
+                                    .with_rotation(Quat::from_rotation_y(-0.25)),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            weapon.spawn((
+                                Mesh3d(arm_mesh),
+                                MeshMaterial3d(glove),
+                                Transform::from_xyz(-0.2, -0.13, -0.2)
+                                    .with_rotation(Quat::from_rotation_y(0.36)),
+                                layer.clone(),
+                                NotShadowCaster,
+                            ));
+                            for (part, size, position) in [
+                                (5, Vec3::new(0.14, 0.23, 0.32), Vec3::new(0.0, -0.02, 0.34)),
+                                (6, Vec3::new(0.1, 0.3, 0.16), Vec3::new(0.0, -0.20, -0.04)),
+                                (7, Vec3::new(0.095, 0.23, 0.12), Vec3::new(0.0, -0.18, 0.14)),
+                                (8, Vec3::new(0.11, 0.12, 0.38), Vec3::new(0.0, 0.19, -0.12)),
+                            ] {
+                                weapon.spawn((
+                                    WeaponPart(part),
+                                    Mesh3d(meshes.add(Cuboid::from_size(size))),
+                                    MeshMaterial3d(gun_dark.clone()),
+                                    Transform::from_translation(position),
+                                    layer.clone(),
+                                    NotShadowCaster,
+                                ));
+                            }
+                            weapon.spawn((
+                                MuzzleFlash,
+                                Mesh3d(muzzle_mesh),
+                                MeshMaterial3d(flash),
+                                Transform::from_xyz(-0.01, 0.01, -1.12),
+                                layer,
+                                NotShadowCaster,
+                                Visibility::Hidden,
+                            ));
+                        });
                 });
         });
 }

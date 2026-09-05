@@ -455,7 +455,7 @@ pub fn animate_scene(
         if let Some(mut visibility) = visibility {
             if muzzle.is_some() {
                 *visibility = if session.flash > 0. {
-                    Visibility::Visible
+                    Visibility::Inherited
                 } else {
                     Visibility::Hidden
                 };
@@ -573,7 +573,7 @@ pub fn sync_hud(
             "bomb":{"state":bomb,"site":if g.bomb.site==0 {"A"} else {"B"},"x":g.bomb.pos.x,"z":g.bomb.pos.z,"time":g.bomb.timer,"defuse":g.bomb.defuse,"defuser":g.bomb.defuser,"near":g.pos.distance(g.bomb.pos)<1.7},
             "winner":if g.winner==Team::Ct {"CT"} else {"T"},"reason":g.reason,"notice":if g.notice_time>0. {g.notice} else {""},
             "hitmarker":g.hitmarker,"headshot":g.headshot,"damage":g.damage_flash,"shots":g.shot_serial,"hurts":g.hurt_serial,"eliminations":g.kill_serial,
-            "spectating":rules::NAMES[session.spectator],"fps":1./real_time.delta_secs().max(0.001),"started":session.started
+            "spectating":rules::NAMES[session.spectator],"fps":1./real_time.delta_secs().max(0.001),"started":session.started,"viewModelReady":session.view_model_ready
         });
         data["spawn"] = serde_json::json!([rules::PLAYER_SPAWN.x, rules::PLAYER_SPAWN.z]);
         data["attackerSpawn"] = serde_json::json!([rules::T_SPAWNS[2].x, rules::T_SPAWNS[2].z]);

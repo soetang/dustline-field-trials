@@ -96,6 +96,12 @@ const path = require('node:path');
     assert.ok(await page.locator('#front-menu').isVisible());
     if (process.env.CAPTURE) await page.screenshot({ path: 'artifacts/dustline-menu.png', timeout: 30000 });
     console.log('Verified renderer startup and menu');
+    await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:60000});
+    if(process.argv.includes('--weapon-visuals')) {
+      await require('./weapons-browser')(page);
+      assert.deepEqual(failures,[],'Weapon models must not cause browser runtime errors');
+      return;
+    }
     if (process.argv.includes('--startup-only')) {
       assert.equal(textures.size, 6, 'The complete PBR material set was not loaded');
       assert.deepEqual(failures, [], 'Browser runtime errors during startup');
@@ -127,6 +133,7 @@ const path = require('node:path');
     // The keyboard purchase must execute exactly once, including after clicking a card.
     await page.keyboard.press('Digit1');
     await page.waitForFunction(() => window.desertStrike.getState().weapon === 'M4A4');
+    await page.waitForFunction(() => window.desertStrike.getState().viewModelReady);
     state = await get(); assert.equal(state.money, 150); assert.equal(state.ammo, 30);
     await page.keyboard.press('Digit3');
     await page.waitForTimeout(120);

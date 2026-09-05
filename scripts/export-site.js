@@ -40,7 +40,6 @@ copy(path.dirname(release.entry));
 const assets = JSON.parse(fs.readFileSync(path.join(root,'assets/manifest.json'),'utf8'));
 for (const [name, group] of Object.entries(assets)) {
   if (!['MIT','CC0-1.0'].includes(group.license)) throw new Error(`Unreviewed asset license: ${name}`);
-  if (name === 'experimentalWeapons') continue; // Not used by the renderer yet.
   for (const file of group.files) {
     if (file.includes('..') || path.isAbsolute(file)) throw new Error('Invalid asset path');
     copy('assets/' + file);

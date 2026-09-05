@@ -4,7 +4,7 @@
     "source": "scripts/make-operators.py",
     "files": ["models/ct_operator.glb", "models/t_operator.glb"]
   },
-  "experimentalWeapons": {
+  "weaponModels": {
     "license": "MIT",
     "source": "scripts/make-weapons.py",
     "files": ["models/view_m4.glb", "models/view_ak.glb", "models/view_awp.glb", "models/view_deagle.glb"]

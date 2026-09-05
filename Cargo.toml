@@ -5,6 +5,10 @@ edition = "2024"
 license = "MIT"
 description = "Dustline: Field Trials — an experimental tactical FPS"
 
+[features]
+# Developer-only frame pacing; excluded from normal builds and Pages releases.
+offline-capture = []
+
 [dependencies]
 bevy = { version = "0.19.1", features = ["jpeg"] }
 serde_json = "1.0.151"

@@ -31,6 +31,7 @@ module.exports=async(page,url,uiOnly)=>{
   await page.goto(url,{waitUntil:'domcontentloaded'});
   if(uiOnly)await page.evaluate(s=>window.desertStrike.render(s),require('./client-state')());
   else await page.waitForFunction(()=>window.desertStrike?.getState(),null,{timeout:90000});
+  if(!uiOnly)await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:60000});
   const input=()=>page.evaluate(()=>window.desertStrike.input());
   const get=()=>page.evaluate(()=>window.desertStrike.getState());
   assert.equal(await page.evaluate(()=>document.body.classList.contains('touch-mode')),true);
@@ -48,6 +49,7 @@ module.exports=async(page,url,uiOnly)=>{
   await page.locator('[data-slot="3"]').tap();
   if(uiOnly)assert.ok((await input()).commands.includes('buy3'));
   else await page.waitForFunction(()=>window.desertStrike.getState().weapon==='DESERT EAGLE');
+  if(!uiOnly)await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady);
   await page.locator('#close-buy').tap();await page.locator('#touch-controls').waitFor({state:'visible'});
   const center=async id=>{const b=await page.locator('#'+id).boundingBox();assert.ok(b);return {x:b.x+b.width/2,y:b.y+b.height/2};};
   const cdp=await page.context().newCDPSession(page);

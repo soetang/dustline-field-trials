@@ -43,8 +43,9 @@ Performance mode with capped render density; real-device performance varies.
 No account or installation is needed. This is single-player with bots, not online
 multiplayer. The engine file is roughly 45 MB (43.3 MiB) before HTTP compression,
 down about 24% by omitting debug function names. Startup streams compilation
-without keeping two complete download buffers in JavaScript. Runtime art adds
-about 3.6 MiB; actual transfer size depends on the server's compression.
+without keeping two complete download buffers in JavaScript. Arena/operator art
+adds about 3.6 MiB; each equipped first-person weapon loads another 0.4–0.8 MiB
+on demand. Actual transfer size depends on the server's compression.
 If needed, choose **Escape → Graphics → Performance**, or try the
 [classic prototype](https://soetang.github.io/dustline-field-trials/classic.html).
 
@@ -64,8 +65,10 @@ browser's media audio session; no sound files or microphone access are needed.
 See [THIRD_PARTY.md](THIRD_PARTY.md), the [asset manifest](assets/manifest.json),
 [texture source URLs/checksums](assets/textures/sources.json) and [license notices](licenses).
 An unused local texture without documented provenance is excluded from Git and
-the published site. Experimental weapon GLBs are included as editable-source
-work in progress, but are not yet used by the renderer.
+the published site. Original first-person weapon GLBs include gloved hands,
+distinct silhouettes and animated magazines/bolts. Models load when equipped
+(about 0.4–0.8 MiB each), use vertex colours without extra texture downloads,
+and retain a primitive visual fallback while loading. Blender sources are included.
 
 ## Build and run locally
 
@@ -152,6 +155,11 @@ captures actual browser screenshots and a raw silent recording, testing assets
 under a repository URL prefix. `node scripts/trim-gameplay.js` saves the short
 clip. Raw sessions stay in ignored `artifacts/video-raw/`; curated media lives in
 `docs/media/`.
+
+`bash scripts/build-capture.sh` builds a separate, development-only engine with
+explicit time steps for offline recording experiments. It does not change the
+playable release manifest; site checks reject capture-only engines. Smooth
+recording is still being developed and is not a real-time performance test.
 
 The native entry point exists (`cargo run --release`), but the browser is the
 primary tested client. Native Linux needs Bevy's Wayland/ALSA/udev development
