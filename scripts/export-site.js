@@ -14,7 +14,7 @@ function copy(file, destination = file) {
   fs.mkdirSync(path.dirname(target),{recursive:true});
   fs.cpSync(path.join(root,file),target,{recursive:true});
 }
-for (const file of ['bevy.html','bevy.css','boot.js','client.js','index.html','styles.css','game.js','LICENSE','THIRD_PARTY.md','licenses','assets/manifest.json','assets/textures/sources.json','web/current.json']) copy(file);
+for (const file of ['bevy.html','bevy.css','boot.js','client.js','touch-controls.js','index.html','styles.css','game.js','LICENSE','THIRD_PARTY.md','licenses','assets/manifest.json','assets/textures/sources.json','web/current.json']) copy(file);
 if (fs.existsSync(path.join(root,'docs/media/gameplay.webm'))) {
   copy('watch.html');
   for (const file of ['dustline-spawn.png','dustline-lane.png','gameplay.webm']) copy('docs/media/'+file);

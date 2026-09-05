@@ -24,9 +24,17 @@ three lanes, cover, gentle hills, original operator models and sandstone ridges.
 
 Bots use sight, short-lived contacts, nearby callouts, bursts, cover-aware
 repositioning and separate bomb/cover roles. Wounded bots briefly hold their
-retreat; teammates no longer steal an active defuse. They still need tuning.
+retreat; teammates no longer steal an active defuse. They scan while advancing,
+recenter before tight corners, and detect wall-sliding without route progress.
+Travel speed is 3.25 m/s versus the player's 3.65 m/s, with slower combat movement.
+They still need tuning.
 
-Use a desktop browser with WebGL2, hardware acceleration, a mouse and keyboard.
+Use a browser with WebGL2 and hardware acceleration. **Desktop mouse/keyboard
+and mobile touch controls are both supported on the same site.** Landscape is
+recommended on phones: left stick to move, swipe the view to look, hold FIRE
+(drag it to aim), and tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
+dedicated buttons. Touch play does not require pointer lock. Phones default to
+Performance mode with capped render density; real-device performance varies.
 No account or installation is needed. This is single-player with bots, not online
 multiplayer. The first engine download is roughly 58 MB before HTTP compression.
 If needed, choose **Escape → Graphics → Performance**, or try the
@@ -78,6 +86,8 @@ For real browser checks:
 npm ci
 npx playwright install chromium
 npm run test:browser -- --performance --playtest
+npm run test:browser -- --mobile-ui       # fast real-browser touch/layout check
+npm run test:browser -- --mobile          # actual Wasm touch gameplay
 ```
 
 The browser suite exercises actual Wasm gameplay: deployment, mouse capture,
@@ -85,6 +95,8 @@ purchases, movement, firing, reloads, aiming, pause/resume and live bot combat.
 Simulation tests are not human difficulty ratings, and software rendering is
 not representative GPU performance. `--startup-only` checks only startup;
 `--ui-only` checks interface behaviour without the game renderer.
+Mobile checks use emulation, not a physical phone. Please report your phone model
+and browser along with any touch-control or performance problems.
 
 While playing, press **Escape → Copy test details**. Paste that report with what
 you tried, what you expected and what happened. It includes the build, match seed,

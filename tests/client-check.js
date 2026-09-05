@@ -11,7 +11,7 @@ const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 assert.equal(ids.length, new Set(ids).size, 'HTML IDs must be unique');
 const references = [...js.matchAll(/(?<![\w$])(?:\$|text|show)\('([^']+)'/g)].map(match => match[1]);
 for (const id of references) assert.ok(ids.includes(id), `Missing HUD element #${id}`);
-for (const file of ['client.js', 'bevy.css', 'bevy.html', 'boot.js']) assert.ok(fs.statSync(path.join(root, file)).size > 0, `Missing client file ${file}`);
+for (const file of ['client.js', 'touch-controls.js', 'bevy.css', 'bevy.html', 'boot.js']) assert.ok(fs.statSync(path.join(root, file)).size > 0, `Missing client file ${file}`);
 const release = process.argv[2] ? {entry: process.argv[2]} : JSON.parse(fs.readFileSync(path.join(root, 'web/current.json'), 'utf8'));
 assert.match(release.entry, /^\.\/web\/builds\/release-[\w-]+\/desert_strike\.js$/);
 const entry = path.resolve(root, release.entry);

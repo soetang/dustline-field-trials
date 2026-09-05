@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#121a1a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23121a1a'/%3E%3Ctext x='4' y='24' font-size='22' fill='%23e3b35b'%3EDS%3C/text%3E%3C/svg%3E">
   <title>Dustline: Field Trials</title>
@@ -30,7 +30,7 @@
         <footer><span class="cyan-dot"></span> YOU ARE COUNTER-TERRORIST</footer>
       </aside>
     </div>
-    <footer class="menu-footer"><span>WASD MOVE <i>·</i> MOUSE AIM <i>·</i> CLICK FIRE</span><a href="./index.html" id="classic-link">CLASSIC VERSION ↗</a><span>MOUSE + KEYBOARD REQUIRED</span></footer>
+    <footer class="menu-footer"><span class="desktop-guide">WASD MOVE <i>·</i> MOUSE AIM <i>·</i> CLICK FIRE</span><span class="touch-guide">TOUCH CONTROLS · LANDSCAPE RECOMMENDED</span><a href="./index.html" id="classic-link">CLASSIC VERSION ↗</a><span class="desktop-guide">MOUSE + KEYBOARD</span></footer>
   </main>
   <div id="bevy-hud" hidden>
     <div class="radar-panel"><header><span id="location">CT SPAWN</span><small>DUSTLINE</small></header><canvas id="radar" width="224" height="168" aria-label="Tactical radar"></canvas><footer><i></i> <span id="radar-status">SQUAD ONLINE</span></footer></div>
@@ -80,7 +80,21 @@
   <section id="scoreboard" class="modal" hidden aria-label="Match scoreboard"><div class="modal-card scoreboard-card"><header><div><span class="eyebrow">OPERATION DUSTLINE</span><h2>MATCH OVERVIEW</h2></div><span>FIRST TO 5</span></header><table><thead><tr><th>OPERATOR</th><th>STATUS</th><th>K</th><th>D</th></tr></thead><tbody id="score-rows"></tbody></table><footer>HOLD TAB TO VIEW · FRIENDLY FIRE OFF</footer></div></section>
   <section id="match-end" class="modal" hidden><div class="modal-card results-card"><span class="eyebrow">OPERATION COMPLETE</span><h2 id="result-title">MISSION SECURED.</h2><div class="result-score"><b id="result-ct">5</b><span>:</span><b id="result-t">0</b></div><p id="result-stats"></p><button id="play-again" class="primary">DEPLOY AGAIN <b>↗</b></button></div></section>
   <button id="screenshot-exit" hidden aria-label="Exit screenshot view and return to the pause menu">PAUSED · ESC / F8 TO RETURN</button>
+  <div id="touch-controls" hidden aria-label="Touch game controls">
+    <div class="touch-top"><button id="touch-pause" aria-label="Pause game">PAUSE</button><button id="touch-buy" aria-label="Open armory">BUY</button></div>
+    <div id="touch-move" role="group" aria-label="Movement joystick"><span>MOVE</span><i id="touch-knob"></i></div>
+    <div class="touch-actions">
+      <button id="touch-aim" aria-label="Toggle aiming" aria-pressed="false">AIM</button>
+      <button id="touch-reload" aria-label="Reload weapon">RELOAD</button>
+      <button id="touch-crouch" aria-label="Toggle crouching" aria-pressed="false">CROUCH</button>
+      <button id="touch-defuse" aria-label="Hold to defuse bomb">DEFUSE</button>
+      <button id="touch-fire" aria-label="Hold to fire; drag to aim">FIRE</button>
+      <button id="touch-spectate" hidden aria-label="Spectate next teammate">NEXT BOT</button>
+    </div>
+    <span class="touch-look-hint">SWIPE THE VIEW TO LOOK</span>
+  </div>
   <div id="error" role="alert" hidden></div>
+  <script src="touch-controls.js"></script>
   <script src="client.js"></script>
   <script type="module" src="boot.js"></script>
 </body>

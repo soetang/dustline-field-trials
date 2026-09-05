@@ -21,3 +21,24 @@
 /* Keep the world visible when an OS screenshot tool takes focus. */
 .screenshot-view #bevy-hud,.screenshot-view .screen-grain,.screenshot-view .modal{display:none!important}
 #screenshot-exit{position:fixed;bottom:12px;left:12px;z-index:6;border:1px solid #b7c6b340;background:#101918aa;padding:9px 12px;font:10px monospace;letter-spacing:1px;color:#ece9dc}
+/* Phone controls never require pointer lock. Each finger owns its own control. */
+.touch-guide{display:none}.touch-mode .desktop-guide{display:none}.touch-mode .touch-guide{display:inline}
+.touch-mode #bevy-canvas,#touch-controls{touch-action:none;-webkit-user-select:none;user-select:none}
+#touch-controls{position:fixed;inset:0;z-index:4;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#touch-controls button{pointer-events:auto;touch-action:none;min-width:48px;min-height:48px;border:1px solid #d8e6cf75;background:#14211dcc;border-radius:12px;font:bold 10px system-ui;color:#f2efdf;letter-spacing:.5px}
+#touch-controls button[aria-pressed=true]{background:#b68a38;border-color:#ffe3a2;color:#101918}
+.touch-top{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;gap:8px}
+#touch-move{position:absolute;pointer-events:auto;touch-action:none;left:max(24px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));width:124px;height:124px;border-radius:50%;border:1px solid #d6e8cf66;background:#13211b66;display:grid;place-items:center}
+#touch-move span{font:9px system-ui;letter-spacing:2px;color:#d3ddc6}#touch-knob{position:absolute;width:48px;height:48px;border:2px solid #b8d6c6aa;border-radius:50%;background:#91beb64d;pointer-events:none}
+.touch-actions{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:58px 58px 72px;gap:8px;align-items:center}
+#touch-fire{grid-column:3;grid-row:1 / 3;width:72px;height:92px!important;border-radius:28px!important;background:#987735bf!important;border-color:#e3b35b!important;font-size:14px!important}
+#touch-spectate{grid-column:1 / 4}.touch-look-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font:8px system-ui;color:#d9e6ce88;white-space:nowrap}
+.touch-mode .controls-hint{display:none}.touch-mode .vitals{bottom:160px;left:15px;transform:scale(.55);transform-origin:bottom left}.touch-mode .ammo-panel{bottom:155px;right:15px;transform:scale(.6);transform-origin:bottom right}
+.touch-mode .vitals .economy{display:none}.touch-mode .radar-panel{left:10px;top:10px;transform:scale(.48)}
+.touch-mode .match-top{top:8px;left:50%;transform:translateX(-50%) scale(.58);transform-origin:top center}.touch-mode .objective{top:73px;font-size:7px;max-width:70vw;white-space:normal}.touch-mode .notice{top:93px;font-size:9px}
+.touch-mode #killfeed{top:115px;right:10px}.touch-mode .modal{overflow-y:auto;padding:12px}.touch-mode .modal-card{max-height:calc(100dvh - 24px);overflow-y:auto}.touch-mode .icon-button{min-width:44px;min-height:44px}
+.touch-mode .overlay{overflow-y:auto;padding-inline:max(20px,env(safe-area-inset-left))}.touch-mode .menu-content{min-height:260px}.touch-mode .menu-nav{min-height:54px}.touch-mode .build-tag{display:none}.touch-mode .menu-footer{min-height:48px;gap:10px;font-size:7px}
+.touch-mode .primary{min-height:48px}.touch-mode .pause-card .control-guide:after{content:'Touch: left stick moves · swipe the view to look · hold FIRE (drag to aim) · tap AIM/CROUCH to toggle.';display:block;color:var(--amber);margin-top:12px}
+.screenshot-view #touch-controls{display:none!important}
+@media(pointer:coarse) and (max-height:500px){.touch-mode .mission-card{display:none}.touch-mode .menu-content{padding:12px 0;min-height:240px}.touch-mode .briefing h1{font-size:48px;margin:10px 0;letter-spacing:-2px}.touch-mode .briefing h1 br{display:none}.touch-mode .briefing h1 em{margin-left:12px}.touch-mode .lede{margin:10px 0;font-size:11px}.touch-mode .deployment-meta{margin-top:10px}.touch-mode .menu-nav{height:54px}.touch-mode .wordmark{font-size:26px}.touch-mode .objective{top:62px}.touch-mode .notice{top:80px}.touch-mode #killfeed{top:100px}.touch-mode .ammo-panel{bottom:138px;transform:scale(.48)}.touch-mode .vitals{bottom:145px;transform:scale(.48)}}
+@media(pointer:coarse) and (max-width:500px){.touch-mode .match-top{top:110px;transform:translateX(-50%) scale(.66)}.touch-mode .objective{top:185px}.touch-mode .notice{top:210px}.touch-mode #killfeed{top:255px}.touch-mode .wordmark span{letter-spacing:1px;padding-left:12px}.touch-mode .primary{min-width:0;width:100%}.touch-look-hint{bottom:155px}.touch-mode .ammo-panel{bottom:180px}.touch-mode .vitals{bottom:180px}#touch-move{width:110px;height:110px;left:16px}.touch-actions{grid-template-columns:50px 50px 64px;gap:6px;right:10px}#touch-fire{width:64px}}

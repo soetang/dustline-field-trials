@@ -33,10 +33,15 @@ pub fn read_controls(
         session.active = input["active"].as_bool().unwrap_or(false);
         session.shop = input["shop"].as_bool().unwrap_or(false);
         session.low_quality = input["quality"].as_str() == Some("low");
+        session.touch = input["touch"].as_bool().unwrap_or(false);
         session.sensitivity = input["sensitivity"].as_f64().unwrap_or(1.) as f32;
         let held = |key: &str| input["held"][key].as_bool().unwrap_or(false);
         controls.forward = u8::from(held("KeyW")) as f32 - u8::from(held("KeyS")) as f32;
         controls.strafe = u8::from(held("KeyD")) as f32 - u8::from(held("KeyA")) as f32;
+        controls.forward =
+            (controls.forward + input["forward"].as_f64().unwrap_or(0.) as f32).clamp(-1., 1.);
+        controls.strafe =
+            (controls.strafe + input["strafe"].as_f64().unwrap_or(0.) as f32).clamp(-1., 1.);
         controls.fire = held("fire");
         controls.fire_pressed = input["firePressed"].as_bool().unwrap_or(false);
         controls.aim = held("aim");
@@ -138,10 +143,27 @@ pub fn read_controls(
     }
 }
 
-pub fn render_quality(session: Res<Session>, mut lights: Query<&mut DirectionalLight>) {
+pub fn render_quality(
+    session: Res<Session>,
+    mut lights: Query<&mut DirectionalLight>,
+    mut window: Single<&mut Window>,
+) {
     for mut light in &mut lights {
         if light.shadow_maps_enabled == session.low_quality {
             light.shadow_maps_enabled = !session.low_quality;
+        }
+    }
+    // High-DPI phones otherwise render 4–9 times as many pixels as their CSS
+    // viewport. Keep touch play within a modest fill-rate/memory budget.
+    if session.touch {
+        let scale = window
+            .resolution
+            .base_scale_factor()
+            .min(if session.low_quality { 1. } else { 1.5 });
+        if window.resolution.scale_factor_override() != Some(scale) {
+            let (width, height) = (window.width(), window.height());
+            window.resolution.set_scale_factor_override(Some(scale));
+            window.resolution.set(width, height);
         }
     }
 }
@@ -223,7 +245,7 @@ pub fn player_controller(
                     Vec3::new(player.forward().x, 0., player.forward().z).normalize_or_zero();
                 let right = Vec3::new(player.right().x, 0., player.right().z).normalize_or_zero();
                 let direction =
-                    (forward * controls.forward + right * controls.strafe).normalize_or_zero();
+                    (forward * controls.forward + right * controls.strafe).clamp_length_max(1.);
                 session.moving = direction != Vec3::ZERO;
                 let speed = if session.crouch {
                     1.25

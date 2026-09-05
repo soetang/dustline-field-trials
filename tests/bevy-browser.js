@@ -22,13 +22,18 @@ const path = require('node:path');
   let browser, page;
   const recentLogs = [];
   let lastState = null;
-  const performanceMode = process.argv.includes('--performance');
+  const mobile = process.argv.includes('--mobile') || process.argv.includes('--mobile-ui');
+  const performanceMode = process.argv.includes('--performance') || mobile;
   const watchdog = setTimeout(() => { console.error('Browser check exceeded its time budget. Last HUD:', lastState); browser?.close(); }, performanceMode ? 300000 : 180000);
   watchdog.unref();
   try {
     browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
     // Exercise the full responsive UI, with fewer software-rendered pixels in CI.
-    page = await browser.newPage({ viewport: { width: 1000, height: 680 }, deviceScaleFactor: Number(process.env.TEST_DPR || .4) });
+    page = await browser.newPage({ viewport: mobile ? {width:844,height:390} : { width: 1000, height: 680 }, deviceScaleFactor: Number(process.env.TEST_DPR || .4), ...(mobile ? {hasTouch:true,isMobile:true} : {}) });
+    if (mobile) {
+      await require('./mobile-browser')(page, 'http://127.0.0.1:' + server.address().port + '/bevy.html', process.argv.includes('--mobile-ui'));
+      return;
+    }
     await page.addInitScript(performanceMode => {
       if (performanceMode) localStorage.setItem('desert-strike-settings', JSON.stringify({quality: 'low'}));
       // The headless driver's pointer-lock recentering emits huge mouse warps.

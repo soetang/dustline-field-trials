@@ -2,8 +2,10 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const canvas = $('bevy-canvas');
+  const touchMode = !!window.matchMedia?.('(pointer: coarse)').matches;
+  let touch = null;
   const prices = [3100, 2700, 4750, 700], magazines = [30, 30, 10, 7];
-  const ui = { started: false, paused: true, shop: false, screenshot: false, ready: false, commands: [], sensitivity: 1, volume: .6, quality: 'standard', seed: Math.floor(Math.random() * 0xffffffff) || 1 };
+  const ui = { started: false, paused: true, shop: false, screenshot: false, ready: false, commands: [], sensitivity: 1, volume: .6, quality: touchMode ? 'low' : 'standard', seed: Math.floor(Math.random() * 0xffffffff) || 1 };
   let held = {}, lookX = 0, lookY = 0, firePressed = false, reloadPressed = false;
   let state = null, previous = null, feedKey = '', scoreKey = '', mapDrawn = false;
   let audio = null, master = null, noise = null, nextBeep = 0, stepDistance = 0, lastPosition = null;
@@ -11,14 +13,15 @@
     const settings = JSON.parse(localStorage.getItem('desert-strike-settings') || '{}');
     ui.sensitivity = Math.min(2.5, Math.max(.3, Number(settings.sensitivity) || 1));
     ui.volume = Number.isFinite(settings.volume) ? Math.min(1, Math.max(0, settings.volume)) : .6;
-    ui.quality = settings.quality === 'low' ? 'low' : 'standard';
+    if (['low','standard'].includes(settings.quality)) ui.quality = settings.quality;
   } catch { /* Storage is optional, including in private browser sessions. */ }
   const text = (id, value) => { const node = $(id); const content = String(value); if (node.textContent !== content) node.textContent = content; };
   const show = (id, visible) => { $(id).hidden = !visible; };
   const clock = seconds => `${Math.floor(Math.max(0, Math.ceil(seconds)) / 60)}:${String(Math.max(0, Math.ceil(seconds)) % 60).padStart(2, '0')}`;
   const money = amount => '$' + amount.toLocaleString('en-US');
-  const active = () => ui.started && !ui.paused && !document.hidden && (document.pointerLockElement === canvas || ui.shop);
-  const clearInput = () => { held = {}; lookX = 0; lookY = 0; firePressed = false; reloadPressed = false; };
+  const active = () => ui.started && !ui.paused && !document.hidden && (touchMode || document.pointerLockElement === canvas || ui.shop);
+  const clearInput = () => { held = {}; lookX = 0; lookY = 0; firePressed = false; reloadPressed = false; touch?.reset(); };
+  const showTouch = () => { show('touch-controls', touchMode && active() && !ui.shop && !ui.screenshot && state?.phase !== 'finished'); };
 
   function saveSettings() {
     try { localStorage.setItem('desert-strike-settings', JSON.stringify({ sensitivity: ui.sensitivity, volume: ui.volume, quality: ui.quality })); } catch {}
@@ -54,12 +57,14 @@
     clearInput();
     initAudio(); ui.paused = false; ui.shop = false; show('pause', false); show('buy-menu', false);
     canvas.focus({ preventScroll: true });
+    if (touchMode) { showTouch(); return; }
     try { await canvas.requestPointerLock(); } catch { pause(); text('pause-heading', 'CLICK TO REJOIN.'); }
   }
   function pause() {
     if (!ui.started || state?.phase === 'finished') return;
     clearInput();
     ui.paused = true; ui.shop = false; show('buy-menu', false); show('scoreboard', false); show('pause', !ui.screenshot);
+    showTouch();
     if (document.pointerLockElement) document.exitPointerLock();
   }
   function screenshotView(enabled) {
@@ -87,6 +92,7 @@
     if (ui.shop) { capture(); return; }
     clearInput();
     ui.shop = true; show('buy-menu', true); if (document.pointerLockElement) document.exitPointerLock();
+    showTouch();
     $('close-buy').focus({ preventScroll: true });
   }
 
@@ -126,10 +132,11 @@
     if (ui.shop && !button.disabled) ui.commands.push(`buy${button.dataset.slot}`);
   }));
   document.addEventListener('pointerlockchange', () => {
+    if (touchMode) return;
     if (document.pointerLockElement !== canvas && !ui.shop && ui.started) pause();
     else if (document.pointerLockElement === canvas) { ui.paused = false; show('pause', false); }
   });
-  document.addEventListener('pointerlockerror', () => { if (ui.started && !ui.shop) pause(); });
+  document.addEventListener('pointerlockerror', () => { if (!touchMode && ui.started && !ui.shop) pause(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
   window.addEventListener('blur', pause);
   window.addEventListener('contextmenu', event => event.preventDefault());
@@ -146,7 +153,7 @@
     if (event.code === 'Escape' && ui.started) { if (ui.screenshot) toggleScreenshot(); else pause(); }
     if (ui.shop && /^Digit[1-4]$/.test(event.code)) { event.preventDefault(); ui.commands.push(`buy${Number(event.code.slice(-1)) - 1}`); }
   }, true);
-  document.addEventListener('keyup', event => { held[event.code] = false; if (event.code === 'Tab') show('scoreboard', false); }, true);
+  document.addEventListener('keyup', event => { if (Object.hasOwn(held, event.code)) held[event.code] = false; if (event.code === 'Tab') show('scoreboard', false); }, true);
   document.addEventListener('mousemove', event => { if (active() && !ui.shop) { lookX += event.movementX; lookY += event.movementY; } });
   document.addEventListener('mousedown', event => {
     if (!active() || ui.shop || document.pointerLockElement !== canvas) return;
@@ -164,6 +171,9 @@
   }
   $('quality').value = ui.quality;
   $('quality').addEventListener('change', () => { ui.quality = $('quality').value === 'low' ? 'low' : 'standard'; saveSettings(); });
+  document.body.classList.toggle('touch-mode', touchMode);
+  touch = window.createDustlineTouchControls?.({enabled: touchMode, active: () => active() && !ui.shop,
+    pause, shop, reload: () => { reloadPressed = true; }, spectate: () => { if (state?.health <= 0) ui.commands.push('spectate'); }});
 
   function drawMap(target, s, briefing = false) {
     const ctx = target.getContext('2d'), w = target.width, h = target.height;
@@ -255,6 +265,8 @@
     }
     if (!mapDrawn) { drawMap($('brief-map'), s, true); mapDrawn = true; }
     state = s;
+    showTouch();
+    show('touch-spectate', s.health <= 0);
     text('health', Math.ceil(s.health)); text('armor', Math.ceil(s.armor)); text('money', money(s.money)); text('buy-money', money(s.money));
     text('ammo', s.ammo); text('reserve', s.reserve); text('weapon-name', s.weapon); text('weapon-class', ['ASSAULT RIFLE', 'ASSAULT RIFLE', 'PRECISION RIFLE', 'HEAVY PISTOL'][s.slot]); text('weapon-slot', `0${s.slot + 1}`);
     text('ct-score', s.scores[0]); text('t-score', s.scores[1]); text('round-label', `ROUND ${String(s.round).padStart(2, '0')}`);
@@ -296,6 +308,7 @@
     if (s.phase === 'finished') {
       screenshotView(false);
       show('match-end', true); show('pause', false); show('buy-menu', false); show('scoreboard', false); ui.shop = false;
+      clearInput(); showTouch();
       text('result-title', s.winner === 'CT' ? 'MISSION SECURED.' : 'MISSION LOST.'); text('result-ct', s.scores[0]); text('result-t', s.scores[1]);
       text('result-stats', `${s.kills} ELIMINATIONS · ${s.deaths} DEATHS · ${s.round} ROUNDS`);
       if (document.pointerLockElement) document.exitPointerLock();
@@ -321,7 +334,12 @@
   canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); pause(); fail(new Error('Graphics context lost. Reload to reconnect')); });
   window.desertStrike = {
     input: () => {
-      const value = { active: active(), shop: ui.shop, sensitivity: ui.sensitivity, quality: ui.quality, seed: ui.seed, commands: ui.commands.splice(0), held: {...held}, lookX, lookY, firePressed, reloadPressed };
+      const t = touch?.read() || {};
+      const value = { active: active(), shop: ui.shop, touch: touchMode, forward: t.forward || 0, strafe: t.strafe || 0, sensitivity: ui.sensitivity, quality: ui.quality, seed: ui.seed, commands: ui.commands.splice(0), held: {...held}, lookX: lookX + (t.lookX || 0), lookY: lookY + (t.lookY || 0), firePressed: firePressed || !!t.firePressed, reloadPressed };
+      if (t.fire) value.held.fire = true;
+      if (t.aim) value.held.aim = true;
+      if (t.crouch) value.held.ControlLeft = true;
+      if (t.defuse) value.held.KeyE = true;
       lookX = 0; lookY = 0; firePressed = false; reloadPressed = false;
       return value;
     },
