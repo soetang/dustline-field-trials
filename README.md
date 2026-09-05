@@ -21,6 +21,9 @@ The Bevy client now plays complete first-to-five matches. Four friendly bots and
 
 Bots now use a forward/peripheral view, short-lived last-seen and gunfire contacts, nearby teammate callouts, cover-aware repositioning, short bursts with reaction delays, and separate bomb recovery/defuse/cover roles. They stop tracking hidden targets and their bullets respect actual cover and crossing teammates. Routes use radius-aware corner smoothing and local spacing. Tab shows your surviving squadmates' current tasks, without exposing enemy tasks. Each new match has a fresh seed, included in the feedback report.
 
+Wounded bots now finish their retreat and briefly hold cover before investigating
+again. A passing teammate no longer interrupts an active defuse or resets its progress.
+
 The browser interface includes a mission briefing, tactical radar, live kill feed, a ten-player scoreboard, clickable armory, hit and damage feedback, synthesized audio, match results, and a pause menu with saved sensitivity and volume. Escape and switching away from the browser pause the simulation.
 
 The expanded Dustline arena is 64 × 48 metres (four times the original footprint). Staggered walls break the mid spawn sightline; the three routes, bot waypoints, radar, and sites use the same enlarged layout. Weapons, movement speeds, and operator sizes remain human-scale. Concrete floor and wall materials include normal maps and packed occlusion/roughness/metalness maps from [Poly Haven](https://polyhaven.com), under [CC0](https://polyhaven.com/license). Source URLs and checksums are recorded in `assets/textures/sources.json`.

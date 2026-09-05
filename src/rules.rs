@@ -1103,14 +1103,21 @@ impl Game {
                 let defuser = if player_can {
                     Some(9)
                 } else {
-                    self.bots.iter().position(|b| {
+                    let eligible = |i: usize| {
+                        let b = &self.bots[i];
                         b.team == Team::Ct
                             && b.health > 0.
                             && (b.target.is_none()
                                 || (b.intent == ai::Intent::Defuse && self.bomb.timer < 9.))
                             && b.pos.distance(self.bomb.pos) < 1.4
                             && self.map.visible(b.pos, self.bomb.pos)
-                    })
+                    };
+                    // A passing teammate must not steal an active defuse and
+                    // erase its progress. Hand off only if the defuser cannot continue.
+                    self.bomb
+                        .defuser
+                        .filter(|i| *i < 9 && eligible(*i))
+                        .or_else(|| (0..self.bots.len()).find(|i| eligible(*i)))
                 };
                 if defuser != self.bomb.defuser {
                     self.bomb.defuse = 0.;

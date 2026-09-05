@@ -156,6 +156,47 @@ mod tests {
         );
     }
     #[test]
+    fn wounded_bot_finishes_retreat_and_holds_before_investigating() {
+        let mut g = arena();
+        for x in 16..25 {
+            g.map.tiles[24][x] = 1;
+        }
+        g.bots[0].health = 30.;
+        g.bots[0].contact = Some(Contact {
+            pos: g.bots[4].pos,
+            ttl: 4.,
+        });
+        g.bots[0].tactical_goal = Some(Point::new(21.5, 21.5));
+        g.bots[0].tactic_time = 2.;
+        g.plan_bot(0);
+        assert_eq!(g.bots[0].intent, Intent::Reposition);
+        assert_eq!(g.bots[0].path.back(), g.bots[0].tactical_goal.as_ref());
+        g.bots[0].pos = g.bots[0].tactical_goal.unwrap();
+        g.plan_bot(0);
+        assert_eq!(g.bots[0].intent, Intent::Hold);
+        g.bots[0].tactic_time = 0.;
+        g.plan_bot(0);
+        assert_eq!(g.bots[0].intent, Intent::Investigate);
+    }
+    #[test]
+    fn active_defuser_keeps_progress_when_a_teammate_crosses_the_bomb() {
+        let mut g = arena();
+        g.bomb.state = BombState::Planted;
+        g.bomb.pos = Point::new(20., 20.);
+        g.bomb.timer = 20.;
+        g.bots[1].health = 100.;
+        g.bots[1].pos = g.bomb.pos;
+        g.bomb.defuser = Some(1);
+        g.bomb.defuse = 3.;
+        g.tick_bomb(0.05, false);
+        assert_eq!(g.bomb.defuser, Some(1));
+        assert!(g.bomb.defuse > 3.);
+        g.bots[1].health = 0.;
+        g.tick_bomb(0.05, false);
+        assert_eq!(g.bomb.defuser, Some(0));
+        assert!(g.bomb.defuse < 0.1, "A real handoff must restart defusing");
+    }
+    #[test]
     fn path_smoothing_never_cuts_a_blocked_corner() {
         let mut g = arena();
         g.map.tiles[21][21] = 1;
@@ -370,7 +411,10 @@ impl Game {
         if best != self.bots[i].target {
             self.bots[i].cooldown = self.bots[i].cooldown.max(0.45 + self.random() * 0.2);
             self.bots[i].burst_left = 3;
-            self.bots[i].tactic_time = 0.;
+            // Losing sight must not cancel a wounded operator's retreat.
+            if best.is_some() {
+                self.bots[i].tactic_time = 0.;
+            }
         }
         self.bots[i].target = best;
         let (mut goal, mut intent) = self.objective(i);
@@ -397,7 +441,20 @@ impl Game {
                 || (self.bomb.state == BombState::Planted
                     && (p.distance(self.bomb.pos) < 7.
                         || contact.pos.distance(self.bomb.pos) > 11.));
-            if !objective_busy && p.distance(contact.pos) > 0.9 {
+            let retreat = self.bots[i].tactical_goal.filter(|cover| {
+                self.bots[i].health < 42.
+                    && self.bots[i].tactic_time > 0.6
+                    && !self.map.visible(*cover, contact.pos)
+                    && self.map.walkable_segment(p, *cover)
+            });
+            if let Some(cover) = retreat.filter(|_| !objective_busy) {
+                goal = cover;
+                intent = if p.distance(cover) > 0.3 {
+                    Intent::Reposition
+                } else {
+                    Intent::Hold
+                };
+            } else if !objective_busy && p.distance(contact.pos) > 0.9 {
                 goal = contact.pos;
                 intent = Intent::Investigate;
             } else if p.distance(contact.pos) <= 0.9 {
