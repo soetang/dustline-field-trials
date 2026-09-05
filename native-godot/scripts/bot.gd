@@ -32,6 +32,7 @@ var progress_at := Vector3.ZERO
 var progress_left := 0.4
 var travel := 0.0
 var shots := 0
+var step_clock := 0.0
 var blocked_fire := 0.0
 var friendly_blocks := 0
 var replans := 0
@@ -207,6 +208,10 @@ func _physics_process(dt: float) -> void:
 	if working_defuse: game.defuse(self, dt)
 	elif working_plant: game.objective.try_plant(self, dt)
 	travel += position.distance_to(before)
+	step_clock += Vector2(position.x - before.x, position.z - before.z).length()
+	if step_clock > 2.3 and is_on_floor():
+		step_clock = 0
+		game.sound.play_at("step", position + Vector3.UP * 0.2, -5, 0.96 + (index % 3) * 0.03)
 	progress_left -= dt
 	if progress_left <= 0:
 		if desired.length_squared() > 0.1 and position.distance_to(progress_at) < 0.35: stuck_time += 0.4
@@ -244,8 +249,7 @@ func shoot() -> bool:
 	if burst_left <= 0:
 		burst_left = rng.randi_range(2, 4)
 		burst_pause = rng.randf_range(0.28, 0.65)
-	var distance: float = position.distance_to(game.view_position())
-	if distance < 55: game.sound.play(Weapons.SPECS[slot].model, -6.0 - distance * 0.35, 0.97)
+	game.sound.play_at(Weapons.SPECS[slot].model, eye(), 0, 0.97)
 	return true
 
 func take_hit(damage: float, attacker: Node3D, headshot: bool = false) -> void:

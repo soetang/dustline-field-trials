@@ -60,6 +60,7 @@ func _ready() -> void:
 	world = World.new()
 	add_child(world)
 	sound = Sound.new()
+	sound.game = self
 	add_child(sound)
 	silent_test = "--test" in OS.get_cmdline_user_args()
 	sound.muted = silent_test
@@ -127,6 +128,7 @@ func set_paused(value: bool) -> void:
 	paused = value
 	if value:
 		buy_open = false
+		sound.stop_all()
 		player.pending_fire = false
 		spectator.pending_step = 0
 		for action in ["fire", "aim", "forward", "back", "left", "right", "interact"]: Input.action_release(action)
@@ -161,6 +163,7 @@ func buy(index: int) -> bool:
 	return true
 
 func new_round() -> void:
+	sound.stop_all()
 	spectator.reset()
 	combat.reset()
 	kill_feed.clear()
@@ -237,7 +240,7 @@ func _physics_process(dt: float) -> void:
 			bomb_beep -= dt
 			if bomb_beep <= 0:
 				bomb_beep = 0.22 if bomb_left < 8 else 0.85
-				sound.play("beep", -7)
+				sound.play_at("beep", bomb_at + Vector3.UP * 0.3, -3)
 			if bomb_left <= 0: finish_round(1, "DEVICE DETONATED")
 		var ct_alive := 1 if player.health > 0 else 0
 		var t_alive := 0

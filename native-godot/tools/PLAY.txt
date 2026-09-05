@@ -18,6 +18,7 @@ F8 saves a screenshot without using an external screenshot shortcut.
 Pause > Open screenshots folder finds your captures.
 Pause > Copy feedback details copies the build, FPS, position and controls state.
 Nothing is uploaded automatically. Audio is synthesized noise and tones.
+Gunshots, bot footsteps and device beeps have stereo position and wall muffling.
 
 This is an early native foundation, not CS2-quality finished artwork or a
 competitive multiplayer release. Four weapons; no grenades or networking yet.

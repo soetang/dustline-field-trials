@@ -64,7 +64,7 @@ func sync_menu() -> void:
 		button("Ready  /  B", game.toggle_buy)
 	else:
 		menu_title.text = "DUSTLINE / NATIVE"
-		menu_note.text = "COURTYARD · Single-map tactical experiment\nOriginal map & assets • Sol + Astra run\nWASD move • Mouse aim • LMB fire • R reload\nB armory • E defuse • F8 save screenshot"
+		menu_note.text = "COURTYARD · Single-map tactical experiment\nMIT + CC0 assets • Sol + Astra run\nWASD move • Mouse aim • LMB fire • R reload\nB armory • E defuse • F8 save screenshot"
 		if game.phase == "MATCH OVER":
 			button("Match complete / Play again", game.restart_match)
 		else:

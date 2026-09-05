@@ -67,6 +67,9 @@ health and shot statistics on the clipboard. Paste it with what felt wrong.
 **F8** saves a screenshot without needing an external screenshot shortcut;
 **Escape → Open screenshots folder** finds the files. Nothing uploads
 automatically. Sound is generated noise/tones; there is no recorded soundtrack.
+Bot gunfire, footsteps and device beeps are positional, with distance falloff and
+wall muffling. Sound follows the spectator camera after death. Your own weapon
+and menu/round cues remain centered for clear local feedback.
 
 ## First native prototype
 
@@ -118,7 +121,7 @@ Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
 The native suites include **114 core checks, 47 tactical checks, 12 input checks,
-33 combat/spectator checks and four complete
+33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse
 ownership, teammate shot obstruction, burst movement and expiring radio contacts.
@@ -131,6 +134,11 @@ the same input suite also runs in the actual Windows renderer with mouse capture
 The combat suite uses real body/head bullet rays, verifies damage attribution,
 teammate-only camera cycling, sphere clearance at a solid wall, death transitions,
 pause and round reset. Renderer captures also exercise the spectator HUD.
+`tests/audio_mix.gd` separately checks the real desktop engine output: non-silent
+gunfire, correct stereo panning, reduced signal through a wall and silence when
+muted (four checks). This captures only the game's mixer, never a microphone or
+other applications. The fast audio suite checks bounded voice reuse, distance
+culling, source placement, pause and spectator listener ownership.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
 suite: all key map routes, body clearance, buy freeze, real input movement,

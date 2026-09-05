@@ -4,8 +4,14 @@ extends Node
 ## All samples are generated from seeded noise and oscillators, not recordings.
 var samples: Dictionary = {}
 var voices: Array[AudioStreamPlayer] = []
+var world_voices: Array[AudioStreamPlayer3D] = []
+var game: Node3D
 var voice_index := 0
-var muted := false
+var world_index := 0
+var muted := false:
+	set(value):
+		muted = value
+		if value: stop_all()
 
 func _ready() -> void:
 	for i in 12:
@@ -13,6 +19,14 @@ func _ready() -> void:
 		voice.bus = "Master"
 		add_child(voice)
 		voices.append(voice)
+	for i in 16:
+		var voice := AudioStreamPlayer3D.new()
+		voice.bus = "Master"
+		voice.max_db = -6
+		voice.unit_size = 7
+		voice.panning_strength = 1
+		add_child(voice)
+		world_voices.append(voice)
 	for type in ["m4", "ak", "awp", "deagle", "step", "reload", "hit", "beep", "start"]:
 		samples[type] = synth(type)
 
@@ -56,3 +70,31 @@ func play(type: String, volume: float = 0.0, pitch: float = 1.0) -> void:
 	voice.volume_db = clampf(volume - 7.0, -40.0, 0.0)
 	voice.pitch_scale = pitch
 	voice.play()
+
+func stop_all() -> void:
+	for voice in voices: voice.stop()
+	for voice in world_voices: voice.stop()
+
+func occluded(at: Vector3, listener: Vector3) -> bool:
+	if at.distance_squared_to(listener) < 0.01: return false
+	var ray := PhysicsRayQueryParameters3D.create(listener, at, 1)
+	return not game.get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
+
+func play_at(type: String, at: Vector3, volume: float = 0.0, pitch: float = 1.0) -> AudioStreamPlayer3D:
+	if muted or game.paused or not samples.has(type) or world_voices.is_empty(): return null
+	var listener: Vector3 = game.view_position()
+	var distance := 20.0 if type == "step" else (40.0 if type == "beep" else 65.0)
+	if at.distance_to(listener) >= distance: return null
+	var blocked := occluded(at, listener)
+	var voice := world_voices[world_index % world_voices.size()]
+	world_index += 1
+	voice.stop()
+	voice.global_position = at
+	voice.stream = samples[type]
+	voice.max_distance = distance
+	voice.volume_db = clampf(volume - 7.0 - (10.0 if blocked else 0.0), -45.0, -6.0)
+	voice.attenuation_filter_cutoff_hz = 1600 if blocked else 10000
+	voice.attenuation_filter_db = -24
+	voice.pitch_scale = pitch
+	voice.play()
+	return voice
