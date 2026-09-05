@@ -15,6 +15,7 @@ for preset in 'Windows Desktop' 'Linux'; do
 done
 for platform in windows linux; do
   cp "$project_dir/LICENSE" "$project_dir/README.md" "$project_dir/builds/$platform/"
+  cp "$project_dir/tools/PLAY.txt" "$project_dir/builds/$platform/READ_ME.txt"
   mkdir -p "$project_dir/builds/$platform/licenses"
   cp "$project_dir/licenses/GODOT-LICENSE.txt" "$project_dir/licenses/GODOT-COPYRIGHT.txt" "$project_dir/builds/$platform/licenses/"
 done
