@@ -240,7 +240,7 @@ pub fn player_controller(
                 (pitch - controls.look.y * sensitivity).clamp(-1.35, 1.35),
                 0.,
             );
-            if matches!(game.phase, Phase::Buy | Phase::Live) && game.bomb.defuser != Some(9) {
+            if game.movement_allowed() {
                 let forward =
                     Vec3::new(player.forward().x, 0., player.forward().z).normalize_or_zero();
                 let right = Vec3::new(player.right().x, 0., player.right().z).normalize_or_zero();

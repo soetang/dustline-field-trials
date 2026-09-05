@@ -273,6 +273,12 @@
     state = s;
     showTouch();
     show('touch-spectate', s.health <= 0);
+    const roundLive = s.phase === 'live' && s.time > 87.5;
+    show('round-announcement', s.phase === 'buy' || roundLive);
+    $('round-announcement').classList.toggle('round-live', roundLive);
+    text('round-cue-label', roundLive ? 'ROUND LIVE' : `ROUND ${s.round} · PREPARATION`);
+    text('round-cue-time', roundLive ? 'GO' : Math.max(1, Math.ceil(s.phaseTime)));
+    text('round-cue-detail', roundLive ? 'Movement unlocked · defend A & B' : `Movement locked · ${touchMode ? 'tap BUY' : 'B'} to choose your loadout`);
     text('health', Math.ceil(s.health)); text('armor', Math.ceil(s.armor)); text('money', money(s.money)); text('buy-money', money(s.money));
     text('ammo', s.ammo); text('reserve', s.reserve); text('weapon-name', s.weapon); text('weapon-class', ['ASSAULT RIFLE', 'ASSAULT RIFLE', 'PRECISION RIFLE', 'HEAVY PISTOL'][s.slot]); text('weapon-slot', `0${s.slot + 1}`);
     text('ct-score', s.scores[0]); text('t-score', s.scores[1]); text('round-label', `ROUND ${String(s.round).padStart(2, '0')}`);

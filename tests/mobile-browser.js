@@ -45,6 +45,12 @@ module.exports=async(page,url,uiOnly)=>{
   const stick=await center('touch-move');
   let state=await get();
   await down(1,stick);await move(1,{x:stick.x,y:stick.y-35});
+  if(!uiOnly && state.phase==='buy') {
+    await page.waitForFunction(t=>{const s=window.desertStrike.getState();return s.phase!=='buy'||s.phaseTime<t-.25;},state.phaseTime);
+    const frozen=await get();
+    if(frozen.phase==='buy')assert.ok(Math.hypot(frozen.x-state.x,frozen.z-state.z)<.01,'Touch must not move during preparation');
+    await page.waitForFunction(()=>window.desertStrike.getState().phase==='live',null,{timeout:60000});
+  }
   await down(2,{x:430,y:175});await move(2,{x:445,y:170});
   if(uiOnly){const s=await input();assert.ok(s.forward>.6);assert.ok(s.lookX>0,JSON.stringify(s));assert.equal(s.active,true);}
   else {

@@ -962,6 +962,9 @@ impl Game {
         };
         self.reset_bots();
     }
+    pub fn movement_allowed(&self) -> bool {
+        self.phase == Phase::Live && self.health > 0. && self.bomb.defuser != Some(9)
+    }
     pub fn tick(&mut self, dt: f32, defusing: bool) {
         let dt = dt.clamp(0., 0.05);
         self.shots.clear();
@@ -1157,6 +1160,28 @@ mod tests {
         let mut g = Game::default();
         g.phase = Phase::Live;
         g
+    }
+    #[test]
+    fn preparation_freezes_movement_for_everyone_then_unlocks_the_round() {
+        let mut g = Game::default();
+        let bots: Vec<_> = g.bots.iter().map(|b| b.pos).collect();
+        assert!(!g.movement_allowed());
+        for _ in 0..100 {
+            g.tick(0.05, false);
+        }
+        assert_eq!(g.phase, Phase::Buy);
+        assert_eq!(g.pos, PLAYER_SPAWN);
+        assert_eq!(g.bots.iter().map(|b| b.pos).collect::<Vec<_>>(), bots);
+        for _ in 0..42 {
+            g.tick(0.05, false);
+        }
+        assert_eq!(g.phase, Phase::Live);
+        assert!(g.movement_allowed());
+        g.bomb.defuser = Some(9);
+        assert!(!g.movement_allowed());
+        g.bomb.defuser = None;
+        g.health = 0.;
+        assert!(!g.movement_allowed());
     }
     #[test]
     fn all_floor_and_spawns_are_reachable() {
