@@ -11,7 +11,9 @@ module.exports=async chromium=>{
   const localTemp=execFileSync('wslpath',['-u',locations.temp],{encoding:'utf8'}).trim();
   const profile=fs.mkdtempSync(path.join(localTemp,'dustline-browser-'));
   const windowsProfile=execFileSync('wslpath',['-w',profile],{encoding:'utf8'}).trim();
-  const pid=Number(ps(`(Start-Process -FilePath ${quote(locations.chrome)} -ArgumentList @('--headless=new','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',${quote(`--user-data-dir="${windowsProfile}"`)},'about:blank') -PassThru).Id`));
+  // Match Playwright's foreground-test behavior for an otherwise headless,
+  // native browser; Chrome must not throttle this window as an occluded app.
+  const pid=Number(ps(`(Start-Process -FilePath ${quote(locations.chrome)} -ArgumentList @('--headless=new','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-extensions','--disable-component-update','--remote-debugging-port=0',${quote(`--user-data-dir="${windowsProfile}"`)},'about:blank') -PassThru).Id`));
   if(!Number.isInteger(pid)||pid<=0)throw new Error('Windows Chrome did not return a process ID');
   let browser,relay;const bridges=new Set(),sockets=new Set();let closed=false;
   const cleanup=async()=>{

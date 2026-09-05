@@ -173,6 +173,10 @@ runs the same tests through native Windows graphics. The same environment flag
 works with the capture script. The runner creates a fresh temporary profile,
 uses a loopback-only debugging bridge, and closes only its own browser. It
 does not change your normal browser profile or the deployed game.
+Add `--exported` after the test command's `--` to test the already-exported
+`_site` build under `/dustline-field-trials/`, including versioned browser scripts
+and model/texture loading. This checks the GitHub Pages layout rather than only
+the development server's root URL.
 
 `bash scripts/build-capture.sh` builds a separate, development-only engine with
 explicit time steps for offline recording experiments. It does not change the

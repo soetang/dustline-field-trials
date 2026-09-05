@@ -8,11 +8,16 @@ const {launchBrowser}=require('../scripts/browser-options');
 
 (async () => {
   const root = path.resolve(__dirname, '..');
+  const exported=process.argv.includes('--exported');
+  const serverRoot=exported?path.join(root,'_site'):root;
+  const prefix=exported?'/dustline-field-trials/':'/';
+  assert.ok(!exported || !process.argv.some(arg=>['--ui-only','--mobile-ui'].includes(arg)),'Exported-site mode tests the real engine, not UI fixtures');
   const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png', '.jpg': 'image/jpeg' };
   const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    const file = path.resolve(root, '.' + (pathname === '/' ? '/bevy.html' : pathname));
-    if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
+    if(!pathname.startsWith(prefix)){res.writeHead(404).end();return;}
+    const file = path.resolve(serverRoot, pathname.slice(prefix.length) || 'bevy.html');
+    if (!file.startsWith(serverRoot + path.sep)) { res.writeHead(403).end(); return; }
     fs.stat(file, (error, stat) => {
       if (error || !stat.isFile()) { res.writeHead(404).end(); return; }
       res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Content-Length': stat.size });
@@ -20,6 +25,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const gameURL='http://127.0.0.1:'+server.address().port+prefix+'bevy.html';
   let browser, page;
   const recentLogs = [];
   let lastState = null;
@@ -32,7 +38,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     // Exercise the full responsive UI, with fewer software-rendered pixels in CI.
     page = await browser.newPage({ viewport: mobile ? {width:844,height:390} : { width: 1000, height: 680 }, deviceScaleFactor: Number(process.env.TEST_DPR || .4), ...(mobile ? {hasTouch:true,isMobile:true} : {}) });
     if (mobile) {
-      await require('./mobile-browser')(page, 'http://127.0.0.1:' + server.address().port + '/bevy.html', process.argv.includes('--mobile-ui'));
+      await require('./mobile-browser')(page, gameURL, process.argv.includes('--mobile-ui'));
       return;
     }
     await page.addInitScript(performanceMode => {
@@ -44,7 +50,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     }, process.argv.includes('--performance'));
     page.setDefaultTimeout(performanceMode ? 30000 : 15000);
     if (process.argv.includes('--ui-only')) {
-      await require('./ui-browser')(page, 'http://127.0.0.1:' + server.address().port + '/bevy.html');
+      await require('./ui-browser')(page, gameURL);
       return;
     }
     process.on('unhandledRejection', error => console.error(error));
@@ -60,7 +66,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     });
     // Simulate an unusable cached legacy bundle: the release loader must never use it.
     await page.route('**/web/desert_strike.js', route => route.abort());
-    await page.goto('http://127.0.0.1:' + server.address().port + '/bevy.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(gameURL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.desertStrike?.getState(), null, { timeout: 90000 });
     await page.exposeFunction('recordTestState', s => { lastState = s; });
     await page.evaluate(() => {
@@ -211,7 +217,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     assert.deepEqual(failures, [], 'Browser runtime errors');
     const errorPage = await browser.newPage();
     await errorPage.route('**/web/current.json', route => route.fulfill({status: 503, body: 'Unavailable'}));
-    await errorPage.goto('http://127.0.0.1:' + server.address().port + '/bevy.html');
+    await errorPage.goto(gameURL);
     await errorPage.locator('#error').waitFor({ state: 'visible' });
     assert.match(await errorPage.locator('#error').textContent(), /HTTP 503/);
     assert.doesNotMatch(await errorPage.locator('#error').textContent(), /hardware acceleration/);
