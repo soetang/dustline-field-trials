@@ -25,6 +25,8 @@ jobs:
             ~/.cargo/bin/wasm-bindgen*
             target
           key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            wasm-${{ runner.os }}-
       - name: Install pinned Rust and WebAssembly target
         run: rustup show
       - name: Install matching binding generator

@@ -326,11 +326,18 @@
   }
 
   function render(s) {
+    // The engine sends static terrain/spawn metadata at startup and each new
+    // round. Keep getState() complete while accepting smaller live HUD packets.
+    // Full packets from older engines and UI fixtures remain compatible.
+    s = {...s};
+    for (const field of ['map','spawn','attackerSpawn','sites','layoutScale']) {
+      if (s[field] === undefined) s[field] = state?.[field];
+    }
     if (!ui.ready) {
       ui.ready = true; $('loading').remove(); show('front-menu', true);
       window.dispatchEvent(new Event('desert-strike-ready'));
     }
-    if (!mapDrawn) { drawMap($('brief-map'), s, true); mapDrawn = true; }
+    if (!mapDrawn || state?.map !== s.map) { drawMap($('brief-map'), s, true); mapDrawn = true; }
     state = s;
     showTouch();
     show('touch-spectate', s.health <= 0);
@@ -409,6 +416,7 @@
     input: () => {
       const t = touch?.read() || {};
       const value = { active: active(), shop: ui.shop, touch: touchMode, forward: t.forward || 0, strafe: t.strafe || 0, sensitivity: ui.sensitivity, quality: ui.quality, seed: ui.seed, commands: ui.commands.splice(0), held: {...held}, lookX: lookX + (t.lookX || 0), lookY: lookY + (t.lookY || 0), firePressed: firePressed || !!t.firePressed, reloadPressed };
+      value.compactHud = true;
       if (t.fire) value.held.fire = true;
       if (t.aim) value.held.aim = true;
       if (t.crouch) value.held.ControlLeft = true;

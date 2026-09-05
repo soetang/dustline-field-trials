@@ -34,6 +34,7 @@ pub fn read_controls(
         session.shop = input["shop"].as_bool().unwrap_or(false);
         session.low_quality = input["quality"].as_str() == Some("low");
         session.touch = input["touch"].as_bool().unwrap_or(false);
+        session.compact_hud = input["compactHud"].as_bool().unwrap_or(false);
         session.sensitivity = input["sensitivity"].as_f64().unwrap_or(1.) as f32;
         let held = |key: &str| input["held"][key].as_bool().unwrap_or(false);
         controls.forward = u8::from(held("KeyW")) as f32 - u8::from(held("KeyS")) as f32;
@@ -564,21 +565,30 @@ pub fn sync_hud(
         };
         let bots:Vec<_>=g.bots.iter().enumerate().map(|(i,b)|serde_json::json!({"name":rules::NAMES[i],"team":if b.team==Team::Ct {"CT"} else {"T"},"x":b.pos.x,"z":b.pos.z,"health":b.health,"kills":b.kills,"deaths":b.deaths,"spotted":b.spotted,"flash":b.flash,"intent":b.intent.label()})).collect();
         let feed:Vec<_>=g.feed.iter().map(|f|serde_json::json!({"killer":f.killer,"victim":f.victim,"ct":f.team==Team::Ct,"headshot":f.headshot})).collect();
-        let map: Vec<&[u8]> = g.map.tiles.iter().map(|row| row.as_slice()).collect();
         let mut data = serde_json::json!({
             "phase":phase,"round":g.round,"time":g.clock,"phaseTime":g.phase_time,"buyTime":g.buy_time,"scores":g.scores,"health":g.health,"armor":g.armor,"money":g.money,
             "weapon":g.weapon.spec().name,"slot":g.weapon.slot(),"ammo":g.ammo,"reserve":g.reserve,"reload":g.reload,"reloadTime":g.weapon.spec().reload,
-            "kills":g.kills,"deaths":g.deaths,"alive":[g.alive(Team::Ct),g.alive(Team::T)],"bots":bots,"feed":feed,"map":map,
+            "kills":g.kills,"deaths":g.deaths,"alive":[g.alive(Team::Ct),g.alive(Team::T)],"bots":bots,"feed":feed,
             "x":g.pos.x,"z":g.pos.z,"yaw":player.rotation.to_euler(EulerRot::YXZ).0,"aiming":session.aiming,"moving":session.moving,"recoil":session.recoil,
             "bomb":{"state":bomb,"site":if g.bomb.site==0 {"A"} else {"B"},"x":g.bomb.pos.x,"z":g.bomb.pos.z,"time":g.bomb.timer,"defuse":g.bomb.defuse,"defuser":g.bomb.defuser,"near":g.pos.distance(g.bomb.pos)<1.7},
             "winner":if g.winner==Team::Ct {"CT"} else {"T"},"reason":g.reason,"notice":if g.notice_time>0. {g.notice} else {""},
             "hitmarker":g.hitmarker,"headshot":g.headshot,"damage":g.damage_flash,"shots":g.shot_serial,"hurts":g.hurt_serial,"eliminations":g.kill_serial,
             "spectating":rules::NAMES[session.spectator],"fps":1./real_time.delta_secs().max(0.001),"started":session.started,"viewModelReady":session.view_model_ready
         });
-        data["spawn"] = serde_json::json!([rules::PLAYER_SPAWN.x, rules::PLAYER_SPAWN.z]);
-        data["attackerSpawn"] = serde_json::json!([rules::T_SPAWNS[2].x, rules::T_SPAWNS[2].z]);
-        data["sites"] = serde_json::json!(rules::SITES.map(|s| [s.x, s.z]));
-        data["layoutScale"] = serde_json::json!(rules::LAYOUT_SCALE);
+        // Layout is immutable during a round. Do not allocate and serialize
+        // 3,072 terrain cells twenty times per second on the main thread.
+        let layout = (g.seed, g.round);
+        // Older cached browser UIs do not understand omitted metadata. Their
+        // missing capability flag keeps full packets, even with a newer engine.
+        if !session.compact_hud || session.hud_layout != Some(layout) {
+            let map: Vec<&[u8]> = g.map.tiles.iter().map(|row| row.as_slice()).collect();
+            data["map"] = serde_json::json!(map);
+            data["spawn"] = serde_json::json!([rules::PLAYER_SPAWN.x, rules::PLAYER_SPAWN.z]);
+            data["attackerSpawn"] = serde_json::json!([rules::T_SPAWNS[2].x, rules::T_SPAWNS[2].z]);
+            data["sites"] = serde_json::json!(rules::SITES.map(|s| [s.x, s.z]));
+            data["layoutScale"] = serde_json::json!(rules::LAYOUT_SCALE);
+            session.hud_layout = Some(layout);
+        }
         data["spread"] = serde_json::json!(g.spread(session.moving, session.aiming));
         data["bloom"] = serde_json::json!(g.bloom);
         data["pitch"] = serde_json::json!(player.rotation.to_euler(EulerRot::YXZ).1);

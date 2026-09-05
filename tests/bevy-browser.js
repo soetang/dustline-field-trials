@@ -72,10 +72,11 @@ const {launchBrowser}=require('../scripts/browser-options');
     await page.evaluate(() => {
       const render = window.desertStrike.render;
       let previous;
-      window.playtestStats = {botDistance:0, damagedBotFrames:0, roles:[], frames:0};
+      window.playtestStats = {botDistance:0, damagedBotFrames:0, roles:[], frames:0,layoutPackets:0,compactPackets:0};
       window.desertStrike.render = s => {
         render(s);
         const stats = window.playtestStats; stats.frames++;
+        if(Array.isArray(s.map))stats.layoutPackets++;else stats.compactPackets++;
         for (let i = 0; i < s.bots.length; i++) {
           const bot = s.bots[i];
           if (bot.intent && !stats.roles.includes(bot.intent)) stats.roles.push(bot.intent);
@@ -105,7 +106,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     console.log('Verified renderer startup and menu');
     await page.waitForFunction(()=>window.desertStrike.getState().viewModelReady,null,{timeout:60000});
     if(process.argv.includes('--weapon-visuals')) {
-      await require('./weapons-browser')(page);
+      await require('./weapons-browser')(page,{standard:process.argv.includes('--standard-visuals')});
       assert.deepEqual(failures,[],'Weapon models must not cause browser runtime errors');
       return;
     }
@@ -215,6 +216,21 @@ const {launchBrowser}=require('../scripts/browser-options');
     await page.setViewportSize({ width: 960, height: 640 });
     if (process.env.CAPTURE) await page.screenshot({ path: 'artifacts/dustline-pause-small.png', timeout: 30000 });
     assert.deepEqual(failures, [], 'Browser runtime errors');
+    if(process.argv.includes('--compact-hud')) {
+      const stats=await page.evaluate(()=>window.playtestStats);
+      assert.ok(stats.layoutPackets>=2,'Deploy and restart must each refresh layout metadata');
+      assert.ok(stats.compactPackets>20,'Steady-state HUD traffic must omit unchanged terrain');
+      assert.equal((await get()).map.length,48,'Public HUD snapshots must retain complete cached terrain');
+      await page.evaluate(()=>{
+        window.originalInputForLegacyTest=window.desertStrike.input;
+        window.desertStrike.input=()=>{const packet=window.originalInputForLegacyTest();delete packet.compactHud;return packet;};
+      });
+      await page.waitForFunction(count=>window.playtestStats.layoutPackets>=count+3,stats.layoutPackets);
+      await page.evaluate(()=>{window.desertStrike.input=window.originalInputForLegacyTest;delete window.originalInputForLegacyTest;});
+      const compact=await page.evaluate(()=>window.playtestStats.compactPackets);
+      await page.waitForFunction(count=>window.playtestStats.compactPackets>=count+3,compact);
+      console.log('Verified compact HUD packets, round/restart refresh, and full-packet fallback for cached older UIs.');
+    }
     const errorPage = await browser.newPage();
     await errorPage.route('**/web/current.json', route => route.fulfill({status: 503, body: 'Unavailable'}));
     await errorPage.goto(gameURL);
@@ -223,6 +239,10 @@ const {launchBrowser}=require('../scripts/browser-options');
     assert.doesNotMatch(await errorPage.locator('#error').textContent(), /hardware acceleration/);
     await errorPage.close();
     console.log('Browser checks passed: 3D startup, deployment, mouse capture, click and keyboard purchases, economy, movement, automatic fire, reload conservation, aiming, scoreboard, pause isolation, resume, restart, and saved settings.');
+    if(process.argv.includes('--record')) {
+      console.log('Recording a fresh round in the verified, warmed-up browser.');
+      await require('../scripts/capture-gameplay').recordGameplay(page);
+    }
   } catch (error) {
     console.error('Original failure:', error);
     console.error('Recent browser logs:', recentLogs.join('\n'));

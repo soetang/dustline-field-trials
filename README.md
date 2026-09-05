@@ -44,11 +44,15 @@ first keeps aiming. Tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
 dedicated buttons. Touch play does not require pointer lock. Phones default to
 Performance mode with capped render density; real-device performance varies.
 No account or installation is needed. This is single-player with bots, not online
-multiplayer. The engine file is roughly 45 MB (43.3 MiB) before HTTP compression,
-down about 24% by omitting debug function names. Startup streams compilation
-without keeping two complete download buffers in JavaScript. Arena/operator art
+multiplayer. The engine file is roughly 29 MB (27.6 MiB) before HTTP compression,
+36% smaller than the previous release. The browser build omits unused Bevy
+2D/UI/audio/picking systems and debug function names; the native text HUD remains
+enabled separately. Startup streams compilation without keeping two complete
+download buffers in JavaScript. Arena/operator art
 adds about 3.6 MiB; each equipped first-person weapon loads another 0.4–0.8 MiB
 on demand. Actual transfer size depends on the server's compression.
+Static map metadata is sent to the HUD once per round, not twenty times per
+second; older cached browser UIs automatically keep receiving complete packets.
 If needed, choose **Escape → Graphics → Performance**, or try the
 [classic prototype](https://soetang.github.io/dustline-field-trials/classic.html).
 
@@ -161,6 +165,9 @@ short clip beside that session. Each attempt gets its own directory in ignored
 `artifacts/video-raw/`, with renderer, frame-timing and movement diagnostics.
 Neither command overwrites public media: review the clip before copying it and
 the screenshots into `docs/media/`.
+`node tests/video-check.js path/to/gameplay.webm` decodes the finished clip and
+checks scene motion, file completeness and size, rather than trusting an FPS
+label. It rejects the old mostly-static recording.
 
 Browser tests and captures use portable SwiftShader by default. To use an
 available hardware OpenGL driver, set `DUSTLINE_GPU=1`. On this WSL machine,
@@ -180,6 +187,10 @@ Add `--exported` after the test command's `--` to test the already-exported
 `_site` build under `/dustline-field-trials/`, including versioned browser scripts
 and model/texture loading. This checks the GitHub Pages layout rather than only
 the development server's root URL.
+Add `--record` to that full playtest to capture a fresh round after the engine is
+already warmed up. This is the verified recording path on this machine.
+`--compact-hud` additionally checks metadata refresh and fallback compatibility
+against an engine built from the current sources.
 
 `bash scripts/build-capture.sh` builds a separate, development-only engine with
 explicit time steps for offline recording experiments. It does not change the
@@ -187,5 +198,5 @@ playable release manifest; site checks reject capture-only engines. Smooth
 recording is still being developed and is not a real-time performance test.
 
 The native entry point exists (`cargo run --release`), but the browser is the
-primary tested client. Native Linux needs Bevy's Wayland/ALSA/udev development
-libraries and has not been verified in this workspace.
+primary tested client. Native Linux needs windowing development libraries such
+as Wayland and xkbcommon, and has not been verified in this workspace.

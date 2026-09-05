@@ -90,6 +90,10 @@ struct Session {
     sensitivity: f32,
     round: u32,
     hud_timer: f32,
+    #[cfg(target_arch = "wasm32")]
+    hud_layout: Option<(u32, u32)>,
+    #[cfg(target_arch = "wasm32")]
+    compact_hud: bool,
     spectator: usize,
     view_model_ready: bool,
 }
@@ -110,6 +114,10 @@ impl Default for Session {
             sensitivity: 1.,
             round: 1,
             hud_timer: 0.,
+            #[cfg(target_arch = "wasm32")]
+            hud_layout: None,
+            #[cfg(target_arch = "wasm32")]
+            compact_hud: false,
             spectator: 0,
             view_model_ready: false,
         }

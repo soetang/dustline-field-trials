@@ -6,6 +6,7 @@ cd "$project_dir"
 
 bash scripts/check.sh --source-only
 cargo build --release --target wasm32-unknown-unknown
+node tests/engine-features.js
 mkdir -p web/builds
 build_dir="$(mktemp -d web/builds/release-XXXXXXXX)"
 bindgen_options=()
