@@ -7,6 +7,7 @@ rustc --edition=2024 --test src/rules.rs -o "$check_dir/rules-tests"
 node --check client.js
 node --check touch-controls.js
 node --input-type=module --check < boot.js
+node tests/boot-streaming.js
 if [[ "${1:-}" != "--source-only" ]]; then node tests/client-check.js; fi
 node tests/client-input.js
 node tests/touch-input.js

@@ -11,22 +11,25 @@ try {
   const { default: init } = await import(release.entry);
   const wasm = await fetch(new URL('desert_strike_bg.wasm', new URL(release.entry, location.href)));
   if (!wasm.ok) throw new Error(`The game download failed (HTTP ${wasm.status}). Reload to retry`);
-  const total = Number(wasm.headers.get('content-length'));
-  let bytes;
-  if (wasm.body && total) {
-    const reader = wasm.body.getReader(), chunks = [];
+  // Compile as bytes arrive. Avoid retaining all download chunks and making a
+  // second complete copy, especially on memory-constrained phones.
+  const total = wasm.headers.get('content-encoding') ? 0 : Number(wasm.headers.get('content-length'));
+  let moduleResponse = wasm;
+  if (wasm.body && typeof TransformStream === 'function') {
     let received = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value); received += value.length;
-      status.textContent = `Loading game · ${Math.min(100, Math.round(received / total * 100))}%`;
-    }
-    bytes = new Uint8Array(received); let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  } else bytes = new Uint8Array(await wasm.arrayBuffer());
-  status.textContent = 'Preparing graphics and shaders…';
-  await init({ module_or_path: bytes });
+    const progress = new TransformStream({
+      transform(chunk, controller) {
+        received += chunk.length;
+        status.textContent = total ? `Loading game · ${Math.min(100, Math.round(received / total * 100))}%` : `Loading game · ${(received / 1048576).toFixed(1)} MB`;
+        controller.enqueue(chunk);
+      },
+      flush() { status.textContent = 'Preparing graphics and shaders…'; },
+    });
+    moduleResponse = new Response(wasm.body.pipeThrough(progress), {headers: wasm.headers});
+  }
+  // The generated loader falls back to ArrayBuffer for servers with unsuitable
+  // MIME types or browsers without streaming compilation.
+  await init({ module_or_path: moduleResponse });
 } catch (error) {
   window.desertStrike.fail(error);
 }

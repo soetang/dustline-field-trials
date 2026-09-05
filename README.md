@@ -41,7 +41,10 @@ first keeps aiming. Tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
 dedicated buttons. Touch play does not require pointer lock. Phones default to
 Performance mode with capped render density; real-device performance varies.
 No account or installation is needed. This is single-player with bots, not online
-multiplayer. The first engine download is roughly 58 MB before HTTP compression.
+multiplayer. The engine file is roughly 45 MB (43.3 MiB) before HTTP compression,
+down about 24% by omitting debug function names. Startup streams compilation
+without keeping two complete download buffers in JavaScript. Runtime art adds
+about 3.6 MiB; actual transfer size depends on the server's compression.
 If needed, choose **Escape → Graphics → Performance**, or try the
 [classic prototype](https://soetang.github.io/dustline-field-trials/classic.html).
 
@@ -130,6 +133,8 @@ attacker is eliminated. Short bursts and stationary aiming improve accuracy.
 Push to `main` to build and publish through [GitHub Actions](.github/workflows/pages.yml).
 For a fork, enable **Settings → Pages → Source: GitHub Actions** first and update
 the public links. The first build compiles Bevy; subsequent builds use a cache.
+Release builds omit Wasm debug names; use `KEEP_WASM_NAMES=1 npm run build` when
+readable engine stack traces are needed locally.
 
 `node scripts/export-site.js` creates `_site` containing one verified release,
 allowlisted assets, media and license notices. If `_site` exists, move it aside

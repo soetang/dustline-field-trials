@@ -8,9 +8,12 @@ bash scripts/check.sh --source-only
 cargo build --release --target wasm32-unknown-unknown
 mkdir -p web/builds
 build_dir="$(mktemp -d web/builds/release-XXXXXXXX)"
+bindgen_options=()
+if [[ "${KEEP_WASM_NAMES:-0}" != "1" ]]; then bindgen_options+=(--remove-name-section); fi
 wasm-bindgen \
   --target web \
   --no-typescript \
+  "${bindgen_options[@]}" \
   --out-dir "$build_dir" \
   target/wasm32-unknown-unknown/release/desert_strike.wasm
 
