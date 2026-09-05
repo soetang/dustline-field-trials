@@ -3,6 +3,13 @@ extends Node3D
 
 const Layout = preload("res://scripts/layout.gd")
 const PLASTER = preload("res://shaders/plaster.gdshader")
+const SURFACE = preload("res://shaders/surface.gdshader")
+const WALL_DIFF = preload("res://assets/textures/concrete_wall_001_diff_1k.jpg")
+const WALL_NORMAL = preload("res://assets/textures/concrete_wall_001_nor_gl_1k.jpg")
+const WALL_ARM = preload("res://assets/textures/concrete_wall_001_arm_1k.jpg")
+const FLOOR_DIFF = preload("res://assets/textures/concrete_floor_diff_1k.jpg")
+const FLOOR_NORMAL = preload("res://assets/textures/concrete_floor_nor_gl_1k.jpg")
+const FLOOR_ARM = preload("res://assets/textures/concrete_floor_arm_1k.jpg")
 var materials: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 
@@ -16,11 +23,26 @@ func material(color: Color, metal: float = 0.0) -> StandardMaterial3D:
 		materials[key] = mat
 	return materials[key]
 
-func stone(color: Color, masonry: float = 0.0) -> ShaderMaterial:
+func stone(color: Color, masonry: float = 0.0) -> Material:
+	var key := "stone/" + str(color) + "/" + str(masonry)
+	if materials.has(key): return materials[key]
+	if masonry > 0 and masonry < 1:
+		var brick := ShaderMaterial.new()
+		brick.shader = PLASTER
+		brick.set_shader_parameter("tint", color)
+		brick.set_shader_parameter("masonry", masonry)
+		materials[key] = brick
+		return brick
+	var floor_surface := masonry == 1.0
 	var mat := ShaderMaterial.new()
-	mat.shader = PLASTER
-	mat.set_shader_parameter("tint", color)
-	mat.set_shader_parameter("masonry", masonry)
+	mat.shader = SURFACE
+	mat.set_shader_parameter("tint", color.lightened(0.15))
+	mat.set_shader_parameter("diffuse_map", FLOOR_DIFF if floor_surface else WALL_DIFF)
+	mat.set_shader_parameter("normal_map", FLOOR_NORMAL if floor_surface else WALL_NORMAL)
+	mat.set_shader_parameter("arm_map", FLOOR_ARM if floor_surface else WALL_ARM)
+	mat.set_shader_parameter("normal_strength", 0.55 if floor_surface else 0.5)
+	mat.set_shader_parameter("texture_scale", 0.32 if floor_surface else 0.25)
+	materials[key] = mat
 	return mat
 
 func box(at: Vector3, size: Vector3, mat: Material, solid: bool = false, parent: Node3D = self) -> Node3D:
@@ -73,6 +95,7 @@ func _ready() -> void:
 	ground()
 	buildings()
 	landmarks()
+	doors()
 	for index in Layout.COVERS.size():
 		crate(Layout.COVERS[index], index)
 	site("A", Layout.SITE_A, Color("db7a39"))
@@ -270,3 +293,23 @@ func palm(at: Vector3) -> void:
 		var angle := float(i) / 8 * TAU
 		var branch := box(at + Vector3(sin(angle) * 1.4, 6.8, cos(angle) * 1.4), Vector3(0.6, 0.08, 3.8), leaf)
 		branch.rotation = Vector3(0.2, angle, 0)
+
+func doors() -> void:
+	# Open, reinforced wooden leaves. Their exact footprints also feed navigation.
+	var iron := material(Color("38403b"), 0.62)
+	for index in Layout.DOORS.size():
+		var footprint: Rect2 = Layout.DOORS[index]
+		var center := footprint.get_center()
+		var base := Layout.floor_height(center)
+		var frame := Node3D.new()
+		add_child(frame)
+		frame.position = Vector3(center.x, base, center.y)
+		var wood := material(Color("695138") if index % 2 == 0 else Color("735c41"))
+		box(Vector3(0, 1.55, 0), Vector3(footprint.size.x, 3.1, footprint.size.y), wood, true, frame)
+		for i in 7:
+			var z := (float(i) + 0.5) * footprint.size.y / 7.0 - footprint.size.y * 0.5
+			var plank := material(Color("816446").darkened(float(i % 3) * 0.055))
+			box(Vector3(0, 1.55, z), Vector3(footprint.size.x + 0.012, 3.03, footprint.size.y / 7.0 - 0.025), plank, false, frame)
+			for height in [0.4, 2.45]:
+				for side in [-1, 1]: box(Vector3(side * (footprint.size.x * 0.5 + 0.03), height, z), Vector3(0.035, 0.085, 0.085), iron, false, frame)
+		for height in [0.4, 2.45]: box(Vector3(0, height, 0), Vector3(footprint.size.x + 0.035, 0.16, footprint.size.y + 0.02), iron, false, frame)

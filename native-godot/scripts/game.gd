@@ -112,6 +112,7 @@ func set_paused(value: bool) -> void:
 	paused = value
 	if value:
 		buy_open = false
+		player.pending_fire = false
 		for action in ["fire", "aim", "forward", "back", "left", "right", "interact"]: Input.action_release(action)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if value or buy_open else Input.MOUSE_MODE_CAPTURED
 	if is_instance_valid(hud): hud.sync_menu()
@@ -123,6 +124,11 @@ func toggle_buy() -> void:
 	buy_open = not buy_open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if buy_open else Input.MOUSE_MODE_CAPTURED
 	hud.sync_menu()
+
+func has_gameplay_input() -> bool:
+	# A headless process has no OS cursor to capture. Its synthetic input still
+	# obeys the same pause/armory gates; desktop play additionally requires capture.
+	return not paused and not buy_open and (DisplayServer.get_name() == "headless" or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 
 func buy(index: int) -> bool:
 	if phase != "BUY" or player.health <= 0 or index < 0 or index >= Weapons.SPECS.size(): return false

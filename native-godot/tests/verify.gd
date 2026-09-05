@@ -21,6 +21,10 @@ func frames(count: int) -> void:
 	for i in count: await physics_frame
 
 func run() -> void:
+	var sources: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/textures/sources.json"))
+	check(sources.license == "CC0-1.0", "External surface manifest declares CC0")
+	for asset in sources.assets:
+		check(FileAccess.get_md5("res://assets/textures/" + str(asset.file)) == asset.md5, "Surface matches documented source checksum: " + str(asset.file))
 	for asset in ["ct_operator", "t_operator", "view_m4", "view_ak", "view_awp", "view_deagle"]:
 		var model_scene: PackedScene = Models.ASSETS[asset]
 		var model := model_scene.instantiate()

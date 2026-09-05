@@ -155,6 +155,8 @@ func radar() -> void:
 		draw_rect(Rect2(origin + (room.position + Vector2(44, 44)) * scale, room.size * scale), Color("52616a"))
 	for cover in Layout.COVERS:
 		draw_rect(Rect2(origin + (cover.position + Vector2(44, 44)) * scale, cover.size * scale), Color("25363d"))
+	for door in Layout.DOORS:
+		draw_rect(Rect2(origin + (door.position + Vector2(44, 44)) * scale, door.size * scale), Color("ab895a"))
 	for site_at in [Layout.SITE_A, Layout.SITE_B]:
 		var at: Vector2 = origin + (Vector2(site_at.x, site_at.z) + Vector2(44, 44)) * scale
 		draw_circle(at, 5, accent)

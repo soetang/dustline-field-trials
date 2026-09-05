@@ -1,4 +1,4 @@
-DUSTLINE NATIVE: COURTYARD — 0.1
+DUSTLINE NATIVE: COURTYARD — 0.2
 Experimental Sol + Astra run. Open-source, single-player tactical prototype.
 An original Dust2-inspired map, not the Valve map or an affiliated product.
 
@@ -21,6 +21,7 @@ This is an early native foundation, not CS2-quality finished artwork or a
 competitive multiplayer release. Four weapons; no grenades or networking yet.
 
 All game code, original geometry, models and sound generators: MIT (LICENSE).
+Six scanned concrete textures: Poly Haven CC0, documented in ASSET-SOURCES.txt.
 Godot 4.7.2 and bundled open-source components: see the licenses directory.
 No proprietary engine, Valve assets or commercial sound recordings are included.
 Source, editable model generators and feedback:

@@ -1,0 +1,22 @@
+Dustline Native asset provenance
+
+Original code, shaders, map geometry, UI, generated audio and Blender models:
+MIT, Copyright (c) 2026 Dustline: Field Trials contributors. See ../LICENSE.
+Editable model generators are in the repository's scripts/make-operators.py
+and scripts/make-weapons.py. No Valve models, maps or recordings are used.
+
+The six 1024x1024 concrete surface JPEGs are Poly Haven CC0-1.0 assets:
+https://polyhaven.com/a/concrete_floor
+https://polyhaven.com/a/concrete_wall_001
+https://polyhaven.com/license
+https://creativecommons.org/publicdomain/zero/1.0/
+
+These are unchanged copies of the already-documented textures in this
+repository's assets/textures directory. Exact download URLs, byte sizes and
+MD5 checksums are included in native-godot/assets/textures/sources.json.
+They supply diffuse colour, OpenGL normals and ambient-occlusion/roughness maps.
+CC0 textures remain CC0; they are not claimed as our original MIT artwork.
+
+Godot and its open-source dependencies/font: GODOT-LICENSE.txt and
+GODOT-COPYRIGHT.txt in this directory. No proprietary plugins, asset packs,
+commercial audio or image-generator outputs are bundled.

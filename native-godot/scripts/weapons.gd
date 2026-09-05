@@ -18,6 +18,10 @@ static func spread(slot: int, speed: float, airborne: bool, aimed: bool, crouche
 	if crouched: degrees *= 0.78
 	return deg_to_rad(degrees)
 
+static func wants_fire(slot: int, held: bool, pressed: bool) -> bool:
+	# Rifles are automatic; the sidearm and bolt-action require a fresh press.
+	return held or pressed if slot < 2 else pressed
+
 static func kick(slot: int, shot: int) -> Vector2:
 	var spec: Dictionary = SPECS[slot]
 	return Vector2(deg_to_rad(spec.kick), deg_to_rad(sin(float(shot) * 1.7) * float(spec.kick) * minf(0.75, shot * 0.09)))

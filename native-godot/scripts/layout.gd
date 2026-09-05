@@ -36,6 +36,10 @@ const COVERS := [
 	Rect2(-23, 24, 3, 3), Rect2(2, 14, 2, 3),
 	Rect2(-3, -16, 2, 3), Rect2(-3, -29, 3, 2),
 ]
+const DOORS := [
+	Rect2(24.20, 15.0, 0.24, 3.0), Rect2(31.56, 15.0, 0.24, 3.0),
+	Rect2(-3.65, -20.5, 0.24, 3.0), Rect2(5.41, -20.5, 0.24, 3.0),
+]
 
 var nav := AStarGrid2D.new()
 
@@ -73,6 +77,8 @@ static func clear(p: Vector2, radius: float = 0.38) -> bool:
 	for cover in COVERS:
 		if cover.grow(radius).has_point(p):
 			return false
+	for door in DOORS:
+		if door.grow(radius).has_point(p): return false
 	return true
 
 func cell(p: Vector3) -> Vector2i:

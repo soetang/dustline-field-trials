@@ -28,6 +28,7 @@ var muzzle: OmniLight3D
 var capsule: CapsuleShape3D
 var collision: CollisionShape3D
 var sensitivity := 0.0018
+var pending_fire := false
 
 func _ready() -> void:
 	collision_layer = 2
@@ -70,6 +71,7 @@ func equip(index: int) -> void:
 	cooldown = 0.2
 	heat = 0.0
 	recoil = Vector2.ZERO
+	pending_fire = false
 	if is_instance_valid(gun):
 		held.remove_child(gun)
 		gun.queue_free()
@@ -80,13 +82,16 @@ func equip(index: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game.paused or health <= 0: return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and game.has_gameplay_input():
 		rotation.y -= event.relative.x * sensitivity
 		pitch = clampf(pitch - event.relative.y * sensitivity, -1.48, 1.48)
 	if event.is_action_pressed("reload"): reload_weapon()
+	if event.is_action_pressed("fire"): pending_fire = true
 
 func _physics_process(dt: float) -> void:
 	if game.paused: return
+	var fire_edge := pending_fire or Input.is_action_just_pressed("fire")
+	pending_fire = false
 	cooldown = maxf(0.0, cooldown - dt)
 	heat = maxf(0.0, heat - dt * 4.8)
 	recoil = recoil.lerp(Vector2.ZERO, 1.0 - exp(-dt * 6.5))
@@ -122,7 +127,8 @@ func _physics_process(dt: float) -> void:
 	if flat_speed > 2.6 and is_on_floor() and step_clock > 2.3:
 		step_clock = 0
 		game.sound.play("step", -12, randf_range(0.92, 1.06))
-	if Input.is_action_pressed("fire") and game.phase == "LIVE" and not game.buy_open and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	camera.rotation = Vector3(pitch + recoil.x, recoil.y, 0)
+	if Weapons.wants_fire(slot, Input.is_action_pressed("fire"), fire_edge) and game.phase == "LIVE" and game.has_gameplay_input():
 		fire()
 	if Input.is_action_pressed("interact") and game.phase == "LIVE": game.defuse(self, dt)
 
