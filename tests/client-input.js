@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'bevy.html'), 'utf8');
+const createdCanvases = [];
 
 function eventTarget() {
   const listeners = {};
@@ -25,7 +26,8 @@ function element(tag = 'div') {
     classList: { add(v) { classes.add(v); }, remove(v) { classes.delete(v); }, contains(v) { return classes.has(v); }, toggle(v, active) { if (active) classes.add(v); else classes.delete(v); } },
     setAttribute() {}, remove() {}, focus() { document.activeElement = this; }, select() { this.selected = true; },
     replaceChildren(...children) { this.children = children; }, append(...children) { (this.children ||= []).push(...children); },
-    getContext() { return new Proxy({}, { get(target, key) { return target[key] ?? (() => {}); } }); },
+    drawing: {fills:0,images:0},
+    getContext() { const drawing=this.drawing;return new Proxy({fillRect(){drawing.fills++;},drawImage(){drawing.images++;}}, { get(target, key) { return target[key] ?? (() => {}); } }); },
   });
 }
 const nodes = new Map([...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bid="([^"]+)"[^>]*>/g)].map(([markup, tag, id]) => {
@@ -36,7 +38,7 @@ const document = Object.assign(eventTarget(), {
   hidden: false, pointerLockElement: null, body: element('body'),
   getElementById(id) { assert.ok(nodes.has(id), `Unknown HUD ID ${id}`); return nodes.get(id); },
   querySelectorAll(selector) { assert.equal(selector, '[data-slot]'); return cards; },
-  createElement: element,
+  createElement(tag) {const node=element(tag);if(tag==='canvas')createdCanvases.push(node);return node;},
   exitPointerLock() { this.pointerLockElement = null; this.dispatchEvent({type: 'pointerlockchange'}); },
 });
 const canvas = nodes.get('bevy-canvas');
@@ -60,6 +62,15 @@ const click = id => nodes.get(id).dispatchEvent({type: 'click'});
   assert.equal(input().quality, 'low');
   nodes.get('quality').value = 'standard'; await nodes.get('quality').dispatchEvent({type: 'change'});
   api.render(state);
+  assert.equal(createdCanvases.length,2,'Briefing and radar each get one cached terrain layer');
+  const staticFills=createdCanvases.reduce((n,c)=>n+c.drawing.fills,0);
+  api.render({...state,yaw:state.yaw+.1});
+  assert.equal(createdCanvases.length,2);assert.equal(createdCanvases.reduce((n,c)=>n+c.drawing.fills,0),staticFills,'Movement must not repaint terrain');
+  assert.equal(nodes.get('radar').drawing.images,2,'Radar contacts still get fresh frames');
+  const differentMap=structuredClone(state);differentMap.map[0][0]=differentMap.map[0][0]===1?0:1;
+  api.render(differentMap);assert.equal(createdCanvases.length,3,'Changed layout must invalidate the radar background');
+  nodes.get('radar').width++;api.render(differentMap);assert.equal(createdCanvases.length,4,'Changed canvas size must invalidate the background');
+  nodes.get('radar').width--;api.render(state);
   assert.equal(nodes.get('score-rows').children[1].children[1].textContent, 'HOLDING');
   assert.equal(nodes.get('score-rows').children[5].children[1].textContent, 'ACTIVE', 'Enemy intentions must not leak onto the scoreboard');
   api.render({...state, bots: state.bots.map((bot, i) => i === 0 ? {...bot, intent: 'COVERING SITE'} : bot)});

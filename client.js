@@ -230,29 +230,41 @@
   touch = window.createDustlineTouchControls?.({enabled: touchMode, active: () => active() && !ui.shop,
     pause, shop, reload: () => { reloadPressed = true; }, spectate: () => { if (state?.health <= 0) ui.commands.push('spectate'); }});
 
+  const mapBackgrounds = new WeakMap();
   function drawMap(target, s, briefing = false) {
     const ctx = target.getContext('2d'), w = target.width, h = target.height;
     const mapW = s.map[0].length, mapH = s.map.length, scale = Math.min(w / (mapW + 8), h / (mapH + 8));
     const ox = (w - mapW * scale) / 2, oz = (h - mapH * scale) / 2;
     const sites = s.sites || [[5.8, 4.4], [26.1, 4.8]], spawn = s.spawn || [16.2, 3.8];
-    ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = '#abc89b0a'; ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += scale * 2) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-    for (let z = 0; z < h; z += scale * 2) { ctx.beginPath(); ctx.moveTo(0, z); ctx.lineTo(w, z); ctx.stroke(); }
-    s.map.forEach((row, z) => row.forEach((tile, x) => {
-      if (tile === 1) return;
-      ctx.fillStyle = tile ? '#69725b' : '#455a48'; ctx.fillRect(ox + x * scale, oz + z * scale, scale - .4, scale - .4);
-    }));
-    ctx.font = `bold ${briefing ? 16 : 10}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const [index, [x, z]] of sites.entries()) {
-      ctx.fillStyle = '#e3b35b24'; ctx.beginPath(); ctx.arc(ox + x * scale, oz + z * scale, 2 * scale, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#efd098'; ctx.fillText(index === 0 ? 'A' : 'B', ox + x * scale, oz + z * scale);
+    // Only moving contacts need repainting each HUD packet. Keep a bounded,
+    // per-canvas terrain layer and invalidate it on layout/size changes.
+    const key = JSON.stringify([w,h,briefing,s.map,sites,spawn,s.attackerSpawn]);
+    let cached = mapBackgrounds.get(target);
+    if (!cached || cached.key !== key) {
+      const background = document.createElement('canvas'); background.width=w; background.height=h;
+      const ctx = background.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#abc89b0a'; ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += scale * 2) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let z = 0; z < h; z += scale * 2) { ctx.beginPath(); ctx.moveTo(0, z); ctx.lineTo(w, z); ctx.stroke(); }
+      s.map.forEach((row, z) => row.forEach((tile, x) => {
+        if (tile === 1) return;
+        ctx.fillStyle = tile ? '#69725b' : '#455a48'; ctx.fillRect(ox + x * scale, oz + z * scale, scale - .4, scale - .4);
+      }));
+      ctx.font = `bold ${briefing ? 16 : 10}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const [index, [x, z]] of sites.entries()) {
+        ctx.fillStyle = '#e3b35b24'; ctx.beginPath(); ctx.arc(ox + x * scale, oz + z * scale, 2 * scale, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#efd098'; ctx.fillText(index === 0 ? 'A' : 'B', ox + x * scale, oz + z * scale);
+      }
+      if (briefing) {
+        ctx.fillStyle = '#83c8c7'; ctx.font = '8px monospace'; ctx.fillText('CT', ox + spawn[0] * scale, oz + spawn[1] * scale);
+        const attacker = s.attackerSpawn || [16, 22];
+        ctx.fillStyle = '#e3b35b'; ctx.fillText('T', ox + attacker[0] * scale, oz + attacker[1] * scale);
+      }
+      cached = {key,canvas:background}; mapBackgrounds.set(target,cached);
     }
-    if (briefing) {
-      ctx.fillStyle = '#83c8c7'; ctx.font = '8px monospace'; ctx.fillText('CT', ox + spawn[0] * scale, oz + spawn[1] * scale);
-      const attacker = s.attackerSpawn || [16, 22];
-      ctx.fillStyle = '#e3b35b'; ctx.fillText('T', ox + attacker[0] * scale, oz + attacker[1] * scale); return;
-    }
+    ctx.clearRect(0,0,w,h); ctx.drawImage(cached.canvas,0,0);
+    if (briefing) return;
     for (const bot of s.bots) {
       if (bot.health <= 0 || (bot.team === 'T' && bot.spotted <= 0)) continue;
       ctx.fillStyle = bot.team === 'CT' ? '#83c8c7' : '#ed8a60'; ctx.beginPath(); ctx.arc(ox + bot.x * scale, oz + bot.z * scale, 2.4, 0, Math.PI * 2); ctx.fill();
