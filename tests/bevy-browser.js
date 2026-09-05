@@ -134,7 +134,9 @@ const path = require('node:path');
     await page.locator('#close-buy').click();
     console.log('Armory closed', lastState);
     await page.waitForFunction(() => document.pointerLockElement?.id === 'bevy-canvas');
-    await page.waitForFunction(() => window.desertStrike.getState().phase === 'live', null, { timeout: 45000 });
+    // Initial software-GPU shader work can stall wall time while Bevy clamps
+    // simulation deltas. Allow preparation to finish on these slow test hosts.
+    await page.waitForFunction(() => window.desertStrike.getState().phase === 'live', null, { timeout: performanceMode ? 90000 : 45000 });
     state = await get();
     await page.keyboard.down('KeyW');
     await page.waitForFunction(p => { const s = window.desertStrike.getState(); return Math.hypot(s.x - p.x, s.z - p.z) > .4; }, {x: state.x, z: state.z});

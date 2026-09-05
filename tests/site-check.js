@@ -19,6 +19,8 @@ const release = JSON.parse(fs.readFileSync(path.join(root,'web/current.json'),'u
 const url = new URL(release.entry,'https://example.github.io/dustline-field-trials/');
 assert.ok(url.pathname.startsWith('/dustline-field-trials/web/builds/'));
 assert.ok(exists(release.entry));
+const engine=new WebAssembly.Module(fs.readFileSync(path.join(root,path.dirname(release.entry),'desert_strike_bg.wasm')));
+assert.ok(!WebAssembly.Module.imports(engine).some(i=>i.name==='dustline_capture_delta'),'Never publish the development-only capture clock');
 const textures = JSON.parse(fs.readFileSync(path.join(root,'assets/textures/sources.json'),'utf8'));
 for (const asset of textures.assets) {
   const data = fs.readFileSync(path.join(root,'assets/textures',asset.file));

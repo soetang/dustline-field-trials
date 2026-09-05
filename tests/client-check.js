@@ -18,7 +18,18 @@ const entry = path.resolve(root, release.entry);
 const glue = fs.readFileSync(entry, 'utf8');
 const wasm = new WebAssembly.Module(fs.readFileSync(path.join(path.dirname(entry), 'desert_strike_bg.wasm')));
 const imports = WebAssembly.Module.imports(wasm).filter(item => item.kind === 'function');
-for (const item of imports) assert.ok(glue.includes(`${item.name}:`) || glue.includes(`'${item.name}':`), `Mismatched release: missing callable import ${item.name}`);
+for (const item of imports) {
+  let callable=glue.includes(`${item.name}:`) || glue.includes(`'${item.name}':`);
+  // wasm-bindgen can import a JS namespace directly (capture builds use one),
+  // rather than emitting a wrapper property into the main glue module.
+  if(!callable && item.module.startsWith('./') && glue.includes(`"${item.module}":`)) {
+    const file=path.resolve(path.dirname(entry),item.module);
+    assert.ok(file.startsWith(path.dirname(entry)+path.sep),'Imported module escaped its release');
+    const name=item.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    callable=new RegExp(`export\\s+(?:async\\s+)?function\\s+${name}\\s*\\(`).test(fs.readFileSync(file,'utf8'));
+  }
+  assert.ok(callable, `Mismatched release: missing callable import ${item.name}`);
+}
 for (const [, relative] of glue.matchAll(/from\s+['"](.+?)['"]/g)) assert.ok(fs.existsSync(path.resolve(path.dirname(entry), relative)), `Missing generated module ${relative}`);
 assert.equal([...html.matchAll(/data-slot="[0-3]"/g)].length, 4, 'All four weapons must be purchasable');
 assert.match(js, /visibilitychange/, 'Background tabs must pause');
