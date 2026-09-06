@@ -50,6 +50,14 @@ const CT_SUPPORTS := [Rect2(-7.9,-35.5,0.6,0.6),Rect2(-7.9,-29,0.6,0.6),
 
 static var _room_lookup_ready := false
 static var _room_cells := PackedByteArray()
+# Exact broad phase for the fixed AI clearance radius. A half-metre cell is
+# cached only when its WHOLE area has a proven answer. Mixed cells still use
+# the original predicate: this does not round positions or shrink obstacles.
+const NAV_RADIUS := 0.43
+const CLEARANCE_SCALE := 2
+const CLEARANCE_MARGIN := 0.0001 # outward cushion for float transforms/edges
+static var _clearance_lookup_ready := false
+static var _clearance_cells := PackedByteArray() # 0=mixed, 1=clear, 2=blocked
 var nav := AStarGrid2D.new()
 
 func _init() -> void:
@@ -62,7 +70,7 @@ func _init() -> void:
 	nav.update()
 	for x in range(BOUNDS.position.x, BOUNDS.end.x):
 		for z in range(BOUNDS.position.y, BOUNDS.end.y):
-			nav.set_point_solid(Vector2i(x, z), not clear(Vector2(x + 0.5, z + 0.5), 0.43))
+			nav.set_point_solid(Vector2i(x, z), not clear(Vector2(x + 0.5, z + 0.5), NAV_RADIUS))
 
 static func floor_height(p: Vector2) -> float:
 	var south := 1.6 * clampf((p.y - 14.0) / 14.0, 0.0, 1.0)
@@ -110,6 +118,18 @@ static func _build_room_lookup(rooms: Array, bounds: Rect2i) -> PackedByteArray:
 	return result
 
 static func clear(p: Vector2, radius: float = 0.38) -> bool:
+	if radius == NAV_RADIUS and p.is_finite():
+		if not _clearance_lookup_ready:
+			_clearance_cells = _build_clearance_lookup()
+			_clearance_lookup_ready = true
+		if not _clearance_cells.is_empty() and Rect2(BOUNDS).has_point(p):
+			var x := floori((p.x - BOUNDS.position.x) * CLEARANCE_SCALE)
+			var y := floori((p.y - BOUNDS.position.y) * CLEARANCE_SCALE)
+			var state := _clearance_cells[y * BOUNDS.size.x * CLEARANCE_SCALE + x]
+			if state != 0: return state == 1
+	return _clear_direct(p, radius)
+
+static func _clear_direct(p: Vector2, radius: float) -> bool:
 	# Check the union, not individual shrunken rooms: connected doorways stay open.
 	for offset in [Vector2.ZERO, Vector2(radius, radius), Vector2(-radius, radius), Vector2(radius, -radius), Vector2(-radius, -radius)]:
 		if not inside(p + offset):
@@ -123,6 +143,58 @@ static func clear(p: Vector2, radius: float = 0.38) -> bool:
 	for support in CT_SUPPORTS:
 		if support.grow(radius).has_point(p): return false
 	return true
+
+static func _room_region_state(region: Rect2) -> int:
+	# Inclusive end is intentional: touching a boundary makes the broad phase
+	# more conservative. Only all-filled/all-empty regions get cached answers.
+	var filled := false
+	var empty := false
+	for y in range(floori(region.position.y), floori(region.end.y) + 1):
+		for x in range(floori(region.position.x), floori(region.end.x) + 1):
+			if BOUNDS.has_point(Vector2i(x, y)) and _room_cells[(y - BOUNDS.position.y) * BOUNDS.size.x + x - BOUNDS.position.x] != 0:
+				filled = true
+			else:
+				empty = true
+			if filled and empty: return 0
+	return 1 if filled else 2
+
+static func _build_clearance_lookup() -> PackedByteArray:
+	if not _room_lookup_ready:
+		_room_cells = _build_room_lookup(ROOMS, BOUNDS)
+		_room_lookup_ready = true
+	var result := PackedByteArray()
+	# Unsupported future fractional/out-of-bounds layouts retain exact fallback.
+	if _room_cells.is_empty(): return result
+	var obstacles: Array[Rect2] = []
+	for rect: Rect2 in COVERS: obstacles.append(rect.grow(NAV_RADIUS + CLEARANCE_MARGIN))
+	for rect: Rect2 in CT_SUPPORTS: obstacles.append(rect.grow(NAV_RADIUS + CLEARANCE_MARGIN))
+	for door in DOORS:
+		var rect := door_rect(door).grow(NAV_RADIUS + CLEARANCE_MARGIN)
+		var aabb := Rect2(Vector2(door.hinge) + rect.position.rotated(-float(door.yaw)), Vector2.ZERO)
+		for corner in [Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+			aabb = aabb.expand(Vector2(door.hinge) + corner.rotated(-float(door.yaw)))
+		obstacles.append(aabb.grow(CLEARANCE_MARGIN))
+	var width := BOUNDS.size.x * CLEARANCE_SCALE
+	var height := BOUNDS.size.y * CLEARANCE_SCALE
+	result.resize(width * height)
+	for y in height:
+		for x in width:
+			var tile := Rect2(Vector2(BOUNDS.position) + Vector2(x, y) / CLEARANCE_SCALE, Vector2.ONE / CLEARANCE_SCALE).grow(CLEARANCE_MARGIN)
+			# The original predicate always tests the centre: a whole tile outside
+			# the room union is blocked, regardless of the other four samples.
+			if _room_region_state(tile) == 2:
+				result[y * width + x] = 2
+				continue
+			# Requiring the entire expanded tile inside the union is stronger than
+			# the original five-point test, so unsafe/mixed tiles simply fall back.
+			if _room_region_state(tile.grow(NAV_RADIUS)) != 1: continue
+			var clear_tile := true
+			for obstacle in obstacles:
+				if obstacle.intersects(tile, true):
+					clear_tile = false
+					break
+			if clear_tile: result[y * width + x] = 1
+	return result
 
 static func door_rect(door: Dictionary) -> Rect2:
 	return Rect2(minf(0,door.side*door.width),-0.15,door.width,0.30)
@@ -164,7 +236,7 @@ func segment_clear(a: Vector3, b: Vector3) -> bool:
 	var to := Vector2(b.x, b.z)
 	var count := maxi(1, ceili(from.distance_to(to) / 0.22))
 	for i in range(count + 1):
-		if not clear(from.lerp(to, float(i) / count), 0.43):
+		if not clear(from.lerp(to, float(i) / count), NAV_RADIUS):
 			return false
 	return true
 

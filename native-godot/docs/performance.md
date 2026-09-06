@@ -1,4 +1,4 @@
-# Browser performance: 0.4.3–0.4.4
+# Browser performance: 0.4.3–0.4.5
 
 ## Budget and method
 
@@ -72,6 +72,68 @@ does not predict hardware speed. The runner instruments only an isolated copy,
 denies pointer lock/fullscreen and all host-input commands, and excludes probes
 from the public pack. Fast checks cover nested timing, bounded storage and
 enabled/disabled GDScript wrapper semantics.
+
+## 0.4.5: exact navigation broad phase, unchanged graphics
+
+The measured hotspot repeatedly checked five room-union samples, sixteen cover
+rectangles, four rotated doors and four supports at every 0.22 m path sample.
+The new 31,680-byte table records an answer only if a whole half-metre tile can
+be proven clear or blocked. Clear tiles require their radius-expanded area to
+lie entirely inside the room union and outside conservatively expanded obstacle
+bounds. Mixed tiles still execute the original predicate. The table does not
+quantize positions, change sample spacing, modify obstacles, reduce AI update
+frequency or reuse stale results after movement. Other clearance radii and
+unsupported future layouts retain the original calculation. Geometry is static;
+future movable navigation obstacles would need invalidation or separate queries.
+
+The fast differential test passes 595,069 checks, including 582,031 clearance
+comparisons, 5,100 bidirectional/threshold segments and all 7,920 AStar cells.
+It tests actual neighbouring float32 values at every half-cell corner, rotated
+door edges, nine radii, nonfinite inputs and unsupported-layout fallback. There
+are zero false-clear or false-blocked results. Four full seeded rounds also
+retain identical timing, shots, survivors, aggregate travel and zero stall
+windows compared with 0.4.4. Existing body and weapon wall regressions pass.
+On this host the differential check takes ~5.7 seconds including its optional
+native microbenchmark; cold lookup initialization took ~77 ms natively (not a
+browser startup measurement). The byte table contains 14,470 clear, 13,076
+blocked and 4,134 mixed cells. It is built once, not allocated per frame.
+
+The same-browser reference → lookup → lookup → reference test retained the
+settings and 12-second seeded rounds above. All four windows had probes enabled.
+Only the point predicate inside `segment_clear` switches; the reference executes
+the original calculation. Both routes share the test-only dispatch branch.
+The engine compiler remained paused; no other agent renderer or regression
+process ran during the measurements. The idle player can die normally.
+
+| Window | Mean FPS | p95 / p99 ms | Path µs / call | Frames >100 ms |
+|---|---:|---:|---:|---:|
+| Reference before | 19.47 | 100.9 / 112.0 | 565.2 | 13 |
+| Lookup before | 28.74 | 43.9 / 48.9 | 98.4 | 0 |
+| Lookup after | 30.45 | 38.7 / 44.6 | 88.8 | 0 |
+| Reference after | 20.83 | 91.9 / 114.0 | 558.9 | 5 |
+
+Across the two windows each, this is ~83% lower path-check cost per call and
+~47% higher mean FPS in this fixture. Path cost per physics tick falls from
+5.59–5.68 ms to 0.89–0.98 ms. Reporting per-call and per-tick avoids crediting
+the higher rendered-frame count as extra computational savings. Draw calls stay
+around 945; small averages differ because rendered frames sample moving actors
+at different times. Every window fires 35 bot shots; physics ticks range from
+705–722 because the windows end at render boundaries. There are no graphics
+changes. This short, instrumented 720p test is not a 1080p/60 FPS result or proof
+against thermal/long-session degradation. Host timing and instrumentation still
+affect absolute numbers; the independent recorder-control run measured ~31 FPS.
+
+[Raw frame intervals and CPU scopes](performance-navigation-abba.json) record
+the actual renderer, High settings and sample counts. The candidate was measured
+before its build label changed from 0.4.4 to 0.4.5. Reproduce with:
+
+```sh
+node native-godot/tests/map-review-browser.js --gameplay-profile --navigation-abba --windows-render-only --duration=12 --width=1280 --height=720 --capture
+```
+
+This removes redundant computation before considering a compiled port. The
+remaining navigation cost is much smaller; a C++/Rust kernel should now be
+judged against this optimized baseline, not the avoidably expensive old loop.
 
 ## Isolated ambient-occlusion diagnostic (not a same-quality fix)
 
@@ -210,8 +272,8 @@ Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` chan
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.
 
-After the 0.4.4 Pages deployment succeeds, refresh and confirm
-`courtyard-0.4.4-weapon-clearance`, play for 30–60 seconds on High, press Escape,
+After the 0.4.5 Pages deployment succeeds, refresh and confirm
+`courtyard-0.4.5-navigation-lookup`, play for 30–60 seconds on High, press Escape,
 and copy feedback details. Note the scene and whether slowdowns occur during
 fights or grow over time. A 12-round accelerated lifetime check verifies that
 round resets do not accumulate scene nodes; longer rendered matches still need

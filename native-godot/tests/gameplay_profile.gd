@@ -12,8 +12,9 @@ var resolution := Vector2i(1280, 720)
 func _initialize() -> void:
 	call_deferred("run")
 
-func run_segment(name: String, recording: bool) -> void:
+func run_segment(name: String, recording: bool, reference_navigation: bool = false) -> void:
 	game.paused = true
+	Probe.reference_navigation = reference_navigation
 	game.elapsed = 0
 	game.round_number = 0
 	game.rng.seed = game.match_seed
@@ -51,6 +52,7 @@ func run_segment(name: String, recording: bool) -> void:
 		shots += bot.shots
 		travel += bot.travel
 	result.merge({"name": name, "build": game.BUILD,
+		"navigation": "original exact predicate" if reference_navigation else "production clearance",
 		"fixture": "normal nine-bot round; idle player; audio muted; no host input",
 		"instrumented": recording, "seed": game.match_seed,
 		"wrapper_control": "disabled controls still include wrapper dispatch/branch; not pristine source",
@@ -92,8 +94,14 @@ func run() -> void:
 		const ext=gl?.getExtension('WEBGL_debug_renderer_info');
 		window.renderBackend=ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'not exposed';
 	})()""", true)
-	# ABBA order estimates recorder impact; it is not a language-port speedup.
-	for entry in [["control-before", false], ["profile-before", true], ["profile-after", true], ["control-after", false]]:
-		await run_segment(entry[0], entry[1])
+	if "--navigation-abba" in OS.get_cmdline_user_args():
+		# Same renderer, probes and static geometry. Only segment_clear's point
+		# predicate switches between original calculation and broad-phase lookup.
+		for entry in [["reference-before", true], ["lookup-before", false], ["lookup-after", false], ["reference-after", true]]:
+			await run_segment(entry[0], true, entry[1])
+	else:
+		# ABBA order estimates recorder impact; it is not a language-port speedup.
+		for entry in [["control-before", false], ["profile-before", true], ["profile-after", true], ["control-after", false]]:
+			await run_segment(entry[0], entry[1])
 	print("GAMEPLAY_PROFILE_OK")
 	JavaScriptBridge.eval("window.mapReviewComplete = true", true)

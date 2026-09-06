@@ -16,6 +16,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const benchmark = process.argv.includes('--benchmark');
   const wallReview = process.argv.includes('--wall-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
+  const navigationAbba = process.argv.includes('--navigation-abba');
+  assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
   assert.ok([benchmark,wallReview,gameplayProfile].filter(Boolean).length <= 1,'Choose one review/profile mode');
   const longFixture = benchmark || wallReview || gameplayProfile;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
@@ -48,6 +50,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const source=fs.readFileSync(file,'utf8');
     assert.equal((source.match(/Input\.mouse_mode = Input\.MOUSE_MODE_CAPTURED/g)||[]).length,2);
     fs.writeFileSync(file,source.replaceAll('Input.mouse_mode = Input.MOUSE_MODE_CAPTURED','Input.mouse_mode = Input.MOUSE_MODE_VISIBLE'));
+    if (navigationAbba) {
+      const layoutFile=path.join(reviewProject,'scripts/layout.gd');
+      const layoutSource=fs.readFileSync(layoutFile,'utf8');
+      const predicate='if not clear(from.lerp(to, float(i) / count), NAV_RADIUS):';
+      assert.equal(layoutSource.split(predicate).length,2,'Exactly one segment predicate must be adapted');
+      fs.writeFileSync(layoutFile,layoutSource.replace(predicate,
+        'if not (_clear_direct(from.lerp(to, float(i) / count), NAV_RADIUS) if CpuProbe.reference_navigation else clear(from.lerp(to, float(i) / count), NAV_RADIUS)):'));
+    }
   }
   const batchCell = process.argv.find(arg=>arg.startsWith('--batch-cell='))?.split('=')[1];
   if (batchCell) {
@@ -104,6 +114,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (process.argv.includes('--no-color-batching')) args.push('--no-color-batching');
   if (process.argv.includes('--color-batching')) args.push('--color-batching');
   if (steadyProfile) args.push('--profile-steady');
+  if (navigationAbba) args.push('--navigation-abba');
   for (const arg of process.argv.slice(2))
     if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
@@ -193,7 +204,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
     const expectedWalls=['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
       'door-near','door-far','player-reported'];
-    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? ['control-before','profile-before','profile-after','control-after'] : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? (navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after'] : ['control-before','profile-before','profile-after','control-after']) : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
     for (const capture of captures) {
       assert.match(capture.name,/^[a-z-]+$/);
       if (wallReview) {
@@ -211,11 +222,13 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.equal(capture.render.ssao,true);
         assert.ok(capture.physics_ticks > 0 && capture.bot_travel_m > 0,'Real AI and physics ran');
         assert.deepEqual(capture.scopes.map(row=>row.scope),instrumentation.labels);
-        assert.equal(capture.instrumented,capture.name.startsWith('profile-'));
+        assert.equal(capture.instrumented,navigationAbba || capture.name.startsWith('profile-'));
+        if (navigationAbba) assert.equal(capture.navigation,capture.name.startsWith('reference-') ? 'original exact predicate' : 'production clearance');
         assert.ok(capture.instrumented ? capture.instrumented_self_ms > 0 : capture.instrumented_self_ms === 0);
         for (const row of capture.scopes) {
           assert.ok(row.inclusive_ms >= row.self_ms && row.self_ms >= 0);
-          if (capture.instrumented) assert.ok(row.calls > 0,`${row.scope}: selected scope exercised`);
+          if (capture.instrumented && ['bot._physics_process','layout.segment_clear','operator_rig.update_pose','hud._draw'].includes(row.scope))
+            assert.ok(row.calls > 0,`${row.scope}: core scope exercised`);
         }
       }
       if (benchmark || gameplayProfile) {

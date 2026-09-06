@@ -6,6 +6,7 @@ extends RefCounted
 const STACK_SIZE := 32
 const FRAME_CAPACITY := 2048
 static var enabled := false
+static var reference_navigation := false # isolated ABBA fixture only
 static var labels := PackedStringArray()
 static var calls := PackedInt64Array()
 static var inclusive := PackedInt64Array()
