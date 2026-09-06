@@ -192,8 +192,10 @@ func _physics_process(dt: float) -> void:
 	# Pop all reached waypoints before movement: no lost frame at each grid cell.
 	while not path.is_empty() and Vector2(position.x - path[0].x, position.z - path[0].z).length() < 0.25:
 		path.remove_at(0)
-	if path.size() > 1 and game.layout.segment_clear(position, path[1]): path.remove_at(0)
-	if not path.is_empty() and not game.layout.segment_clear(position, path[0]):
+	var shortcut_clear: bool = path.size() > 1 and game.layout.segment_clear(position, path[1])
+	if shortcut_clear: path.remove_at(0)
+	# A successful shortcut just checked this exact position -> new path[0].
+	if not shortcut_clear and not path.is_empty() and not game.layout.segment_clear(position, path[0]):
 		path = game.layout.path(position, path_goal)
 	var desired := Vector3.ZERO
 	if not path.is_empty():
@@ -237,7 +239,7 @@ func _physics_process(dt: float) -> void:
 		progress_at = position
 		progress_left = 0.4
 	if not working_defuse and not working_plant and is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0 and see(target):
-		shoot()
+		_shoot_visible_target()
 
 func shoot() -> bool:
 	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0: return false
@@ -245,6 +247,11 @@ func shoot() -> bool:
 		contact_age = 0
 		higher_aim = false
 		return false
+	return _shoot_visible_target()
+
+func _shoot_visible_target() -> bool:
+	# Internal continuation only: both callers validate the live shot state and
+	# LOS immediately above. Never reuse sight across movement or physics ticks.
 	if ammo <= 0:
 		reload_left = Weapons.SPECS[slot].reload
 		return false
