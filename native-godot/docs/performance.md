@@ -13,7 +13,7 @@ WebGL backend: the old generic `WebKit WebGL` string did not identify it.
 Linux headless SwiftShader is a software renderer, useful for correctness but
 not a prediction of hardware FPS. No Windows GPU settings were changed.
 
-We separate three kinds of evidence:
+We separate four kinds of evidence:
 
 - Real keyboard/mouse browser smoke tests exercise startup, controls, audio,
   screenshots and pause. They do not represent a competitive human match.
@@ -22,6 +22,56 @@ We separate three kinds of evidence:
   outside the timed region. These measure rendering, not full-match performance.
 - Live feedback samples monotonic frame intervals, preserving stalls and
   excluding pause/buy gaps. p95/p99 describe slow frames, not just average FPS.
+- An instrumented nine-bot round runs normal gameplay with an idle player and
+  muted audio. Test-only nested probes identify costly callbacks; this is not
+  human play or a pure GDScript-VM/GPU measurement.
+
+## Live gameplay CPU attribution (before navigation clearance optimization)
+
+2026-09-06, Windows headless Chrome on AMD integrated graphics, High, full-scale
+1280×720, four shadow cascades and SSAO retained. Four 12-second windows reset
+seed 512 and run recorder off → on → on → off. The idle player's camera stays
+at CT spawn. Import, warmup, JSON and screenshots are outside timing. The engine
+compiler was paused and no other agent-owned renderer ran during measurement.
+
+| Scope | Measured self ms / rendered frame, two recorded windows |
+|---|---:|
+| AI path clearance (`layout.segment_clear`) | 13.56 / 13.31 |
+| Bot physics, excluding nested scopes | 2.80 / 2.72 |
+| Operator pose, excluding nested scopes | 0.53 / 0.53 |
+| Player physics, excluding nested scopes | 0.42 / 0.41 |
+| HUD drawing | 0.38 / 0.39 |
+| Weapon clearance | 0.17 / 0.16 |
+
+The recorded windows ran 720 / 722 physics ticks, 265 / 267 rendered frames,
+35 bot shots and approximately 352 / 353 m aggregate bot travel. About 7,200
+path-clearance calls consumed 3.55–3.59 seconds per window. This establishes a
+substantial live-gameplay calculation target that render-only profiling missed.
+The entire bot animation callback, including nested pose and weapon work, cost
+about 1.01–1.02 ms per rendered frame. Do not add inclusive and nested costs.
+
+Mean FPS in the four windows was 21.19 / 22.08 / 22.19 / 22.66; p95 intervals
+were 79.3 / 76.0 / 75.3 / 72.8 ms. The disabled controls retain wrapper dispatch
+overhead and are not pristine production code. This sequence checks recorder
+impact, not an optimization speedup; warmup/host timing can explain differences.
+"Self" subtracts nested instrumented scopes but still includes native calls and
+some instrumentation overhead. The browser clock also has limited precision.
+These are not pure VM times, total CPU time, or GPU timings. At ~22 rendered FPS
+and 60 Hz physics there are ~2.7 physics ticks per rendered frame.
+
+Local raw evidence: `artifacts/map-review-browser-NtfxdJ/captures.json`, with
+scope counts, per-frame samples, renderer settings and instrumentation mapping.
+Reproduce without accessing the desktop mouse:
+
+```sh
+node native-godot/tests/map-review-browser.js --gameplay-profile --windows-render-only --duration=12 --width=1280 --height=720 --capture
+```
+
+Omit `--windows-render-only` for Linux correctness runs; software-renderer FPS
+does not predict hardware speed. The runner instruments only an isolated copy,
+denies pointer lock/fullscreen and all host-input commands, and excludes probes
+from the public pack. Fast checks cover nested timing, bounded storage and
+enabled/disabled GDScript wrapper semantics.
 
 ## Isolated ambient-occlusion diagnostic (not a same-quality fix)
 

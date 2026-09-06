@@ -15,12 +15,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const project = path.resolve(__dirname, '..');
   const benchmark = process.argv.includes('--benchmark');
   const wallReview = process.argv.includes('--wall-review');
-  assert.ok(!wallReview || !benchmark,'Choose wall review or benchmark, not both');
+  const gameplayProfile = process.argv.includes('--gameplay-profile');
+  assert.ok([benchmark,wallReview,gameplayProfile].filter(Boolean).length <= 1,'Choose one review/profile mode');
+  const longFixture = benchmark || wallReview || gameplayProfile;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
   assert.ok(!steadyProfile || (benchmark && !process.argv.includes('--profile')),
     'Use --profile-steady only with --benchmark and without --profile');
-  assert.ok(!windowsRenderOnly || benchmark || wallReview,'Windows renderer is only allowed for no-input render fixtures');
+  assert.ok(!windowsRenderOnly || longFixture,'Windows renderer is only allowed for no-host-input fixtures');
+  assert.ok(!gameplayProfile || !process.argv.some(arg=>/^--(compare|compare-ssao|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching)/.test(arg)),
+    'Gameplay profile preserves default High graphics');
   const candidate = fs.readFileSync(path.join(project, 'builds/web-candidate.txt'), 'utf8').trim();
   assert.match(candidate, /^courtyard-[\w-]+$/);
   let release = path.join(project, 'builds/web-releases', candidate);
@@ -33,6 +37,18 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.mkdirSync(reviewProject);
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
+  let instrumentation;
+  if (gameplayProfile) {
+    fs.copyFileSync(path.join(__dirname,'cpu_profile.gd'),path.join(reviewProject,'_cpu_profile.gd'));
+    instrumentation=require('./profile_instrumentation').instrumentProject(reviewProject);
+    fs.writeFileSync(path.join(artifacts,'instrumentation.json'),JSON.stringify(instrumentation,null,2)+'\n');
+    // No synthetic mouse capture, even during an automatic BUY -> LIVE
+    // transition. Immutable DOM/input denial below remains the second guard.
+    const file=path.join(reviewProject,'scripts/game.gd');
+    const source=fs.readFileSync(file,'utf8');
+    assert.equal((source.match(/Input\.mouse_mode = Input\.MOUSE_MODE_CAPTURED/g)||[]).length,2);
+    fs.writeFileSync(file,source.replaceAll('Input.mouse_mode = Input.MOUSE_MODE_CAPTURED','Input.mouse_mode = Input.MOUSE_MODE_VISIBLE'));
+  }
   const batchCell = process.argv.find(arg=>arg.startsWith('--batch-cell='))?.split('=')[1];
   if (batchCell) {
     assert.ok(benchmark && ['8','16','24'].includes(batchCell));
@@ -55,12 +71,15 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.writeFileSync(path.join(reviewProject,'export_presets.cfg'),presets);
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
-  const reviewScript = fs.readFileSync(path.join(__dirname,wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
+  let reviewScript = fs.readFileSync(path.join(__dirname,gameplayProfile ? 'gameplay_profile.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
+  if (gameplayProfile) reviewScript=reviewScript
+    .replace('res://tests/cpu_profile.gd','res://_cpu_profile.gd')
+    .replace('const LABELS: Array[String] = []',`const LABELS: Array[String] = ${JSON.stringify(instrumentation.labels)}`);
   fs.writeFileSync(path.join(reviewProject,'_map_review.gd'),reviewScript);
   fs.writeFileSync(path.join(reviewProject,'_map_review.tscn'),'[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://_map_review.gd" id="1"]\n[node name="MapReview" type="Node"]\nscript = ExtResource("1")\n');
   const godot = process.env.GODOT_BIN || path.resolve(project,'../.tools/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64');
@@ -86,10 +105,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (process.argv.includes('--color-batching')) args.push('--color-batching');
   if (steadyProfile) args.push('--profile-steady');
   for (const arg of process.argv.slice(2))
-    if (/^--(samples|warmup|width|height|splits|shadow-distance|quality)=\d+$/.test(arg)) args.push(arg);
+    if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
-  const width = benchmark ? dimension('width',640) : 960;
-  const height = benchmark ? dimension('height',360) : wallReview ? 441 : 540;
+  const width = benchmark || gameplayProfile ? dimension('width',gameplayProfile ? 1280 : 640) : 960;
+  const height = benchmark || gameplayProfile ? dimension('height',gameplayProfile ? 720 : 360) : wallReview ? 441 : 540;
   const html = `<!doctype html><html><body style="margin:0"><canvas id="canvas" width="${width}" height="${height}"></canvas>
     <script src="index.js"></script><script>
       window.mapReviewCaptures=[];
@@ -111,7 +130,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   let browser;
   const logs = [], failures = [];
-  const watchdog = setTimeout(() => browser?.close(),benchmark || wallReview ? 600000 : 180000);
+  const watchdog = setTimeout(() => browser?.close(),longFixture ? 600000 : 180000);
   watchdog.unref();
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
@@ -161,7 +180,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
       profiler=null;
     }
-    await page.waitForFunction(() => window.mapReviewComplete === true, null, {timeout:benchmark || wallReview ? 570000 : 150000});
+    await page.waitForFunction(() => window.mapReviewComplete === true, null, {timeout:longFixture ? 570000 : 150000});
     if (profiler) {
       const {profile}=await profiler.send('Profiler.stop');
       fs.writeFileSync(path.join(artifacts,'render.cpuprofile'),JSON.stringify(profile));
@@ -174,7 +193,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
     const expectedWalls=['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
       'door-near','door-far','player-reported'];
-    assert.deepEqual(captures.map(c => c.name),wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? ['control-before','profile-before','profile-after','control-after'] : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
     for (const capture of captures) {
       assert.match(capture.name,/^[a-z-]+$/);
       if (wallReview) {
@@ -184,7 +203,22 @@ const { launchBrowser } = require('../../scripts/browser-options');
           assert.equal(capture.weapon_withdrawal,0,`${capture.name}: unrestricted pose is preserved`);
         else assert.ok(capture.weapon_withdrawal > 0,`${capture.name}: wall-aware withdrawal is exercised`);
       }
-      if (benchmark) {
+      if (gameplayProfile) {
+        assert.equal(capture.dropped_frames,0,'Profile window did not overflow');
+        assert.equal(capture.frames,capture.samples_ms.length);
+        assert.equal(capture.render.quality,'High');
+        assert.equal(capture.render.scale_3d,1);
+        assert.equal(capture.render.ssao,true);
+        assert.ok(capture.physics_ticks > 0 && capture.bot_travel_m > 0,'Real AI and physics ran');
+        assert.deepEqual(capture.scopes.map(row=>row.scope),instrumentation.labels);
+        assert.equal(capture.instrumented,capture.name.startsWith('profile-'));
+        assert.ok(capture.instrumented ? capture.instrumented_self_ms > 0 : capture.instrumented_self_ms === 0);
+        for (const row of capture.scopes) {
+          assert.ok(row.inclusive_ms >= row.self_ms && row.self_ms >= 0);
+          if (capture.instrumented) assert.ok(row.calls > 0,`${row.scope}: selected scope exercised`);
+        }
+      }
+      if (benchmark || gameplayProfile) {
         assert.ok(capture.samples_ms.length >= 12);
         if (!capture.png) continue;
       }
@@ -195,8 +229,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
-    assert.ok(logs.some(line => line.includes(wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    assert.ok(logs.some(line => line.includes(gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
+    console.log('PASS:',gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');
