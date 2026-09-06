@@ -1,6 +1,7 @@
 # Dustline Native: Courtyard
 
-A separate, **native desktop** tactical FPS experiment using **Godot 4.7.2**.
+A separate tactical FPS experiment using **Godot 4.7.2**, with a native desktop
+build and an experimental WebGL2 browser export.
 An experimental **Sol + Astra run**, inspired by Counter-Strike's Dust2 route
 structure. This is an original single-map interpretation, **not the exact Valve
 map**, not an asset extraction, and not affiliated with Valve.
@@ -8,6 +9,54 @@ map**, not an asset extraction, and not affiliated with Valve.
 The existing Rust/Bevy browser game stays unchanged in the parent folder and on
 GitHub Pages. This project does not require a browser, Unreal, Epic account,
 proprietary engine plugins, or commercial asset packs.
+
+## Courtyard browser preview
+
+[Play Courtyard in your browser](https://soetang.github.io/dustline-field-trials/courtyard/).
+
+The same map, rules, AI, weapons and generated sound now export to a
+single-threaded WebGL2 build. This preview needs a **desktop keyboard and mouse**;
+the [original browser game](https://soetang.github.io/dustline-field-trials/)
+continues to support touch controls. Native Forward+ graphics remain available;
+the web build uses Godot's lighter Compatibility renderer.
+
+From the repository root:
+
+```sh
+bash native-godot/tools/setup.sh --web
+bash native-godot/tools/check.sh
+bash native-godot/tools/build-web.sh
+node native-godot/tests/browser.js
+# On a Windows/WSL host, test with isolated hardware-accelerated Windows Chrome:
+DUSTLINE_WINDOWS_BROWSER=1 node native-godot/tests/browser.js
+```
+
+The first setup downloads the official export-template archive (about 1.2 GiB,
+development tools only, never published). Builds are separate candidates under
+`builds/web-releases/`; `builds/web-candidate.txt` selects the latest export.
+No desktop executable, desktop release pointer or existing browser game is replaced.
+Serve the candidate directory over HTTP, not `file://`, to play locally.
+The first export is about 46.3 MiB uncompressed, or 17.9 MiB using local gzip;
+actual HTTP transfer depends on the host. Engine and game pack URLs are pinned
+to one immutable release to avoid mixing cached builds.
+
+The browser test serves only the export at a GitHub Pages-style URL without
+COOP/COEP headers. It checks actual startup, buy freeze, armory, mouse capture,
+move/look/fire/reload, generated audio reaching a running browser audio context,
+PNG screenshot download, and pause/resume. Test instrumentation observes audio
+and avoids headless pointer warps; it never changes game state or its clock.
+The export also has an allowlist, SHA-256 file manifest and size budgets.
+
+In the browser, **F8 downloads a PNG**. **Escape → Copy feedback details** opens
+a selectable/copyable text panel; no clipboard permission is required just to
+read it, and nothing uploads automatically. First load compiles the engine and
+shaders and can take a while. This is an early preview, not a performance promise.
+
+![Courtyard in Windows Chrome, captured from the real exported game](docs/browser-preview.png)
+
+This is the WebGL2 Compatibility renderer during automated keyboard/mouse play,
+not native Forward+ or concept art. Browser/mobile graphics and performance
+need further tuning; touch controls are not implemented in this preview yet.
 
 ![Native A site, captured in Godot on Windows](docs/a-site.png)
 ![Roofed upper tunnels, captured in Godot on Windows](docs/tunnels.png)

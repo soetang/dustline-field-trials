@@ -10,7 +10,8 @@ const HUD = preload("res://scripts/hud.gd")
 const Objective = preload("res://scripts/objective.gd")
 const Combat = preload("res://scripts/combat.gd")
 const Spectator = preload("res://scripts/spectator.gd")
-const BUILD := "native-0.3-combat"
+const Browser = preload("res://scripts/browser.gd")
+const BUILD := "courtyard-0.3-web-preview"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -20,6 +21,7 @@ var hud: Control
 var objective: FieldObjective
 var combat := Combat.new()
 var spectator: FieldSpectator
+var browser: FieldBrowser
 var bots: Array[FieldBot] = []
 var paused := true
 var buy_open := false
@@ -81,6 +83,9 @@ func _ready() -> void:
 	add_child(spectator)
 	new_round()
 	set_paused(true)
+	browser = Browser.new()
+	browser.game = self
+	add_child(browser)
 	print("DUSTLINE_READY ", BUILD, " | ", RenderingServer.get_current_rendering_method(), " | ", RenderingServer.get_video_adapter_name())
 
 func configure_input() -> void:
@@ -132,7 +137,7 @@ func set_paused(value: bool) -> void:
 		player.pending_fire = false
 		spectator.pending_step = 0
 		for action in ["fire", "aim", "forward", "back", "left", "right", "interact"]: Input.action_release(action)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if value or buy_open else Input.MOUSE_MODE_CAPTURED
+	sync_pointer()
 	if is_instance_valid(hud): hud.sync_menu()
 
 func toggle_buy() -> void:
@@ -140,8 +145,13 @@ func toggle_buy() -> void:
 		notify("ARMORY AVAILABLE DURING THE BUY PHASE")
 		return
 	buy_open = not buy_open
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if buy_open else Input.MOUSE_MODE_CAPTURED
+	sync_pointer()
 	hud.sync_menu()
+
+func sync_pointer() -> void:
+	var capture := not paused and not buy_open
+	if is_instance_valid(browser): browser.expect_capture(capture)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if capture else Input.MOUSE_MODE_VISIBLE
 
 func has_gameplay_input() -> bool:
 	# A headless process has no OS cursor to capture. Its synthetic input still
@@ -358,10 +368,15 @@ func notify(message: String, seconds: float = 2.5) -> void:
 	banner_left = seconds
 
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "position": str(player.position), "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return
+	if OS.has_feature("web"):
+		await RenderingServer.frame_post_draw
+		JavaScriptBridge.download_buffer(get_viewport().get_texture().get_image().save_png_to_buffer(), "courtyard.png", "image/png")
+		notify("SCREENSHOT DOWNLOADED")
+		return
 	var directory := OS.get_user_data_dir().path_join("screenshots")
 	DirAccess.make_dir_recursive_absolute(directory)
 	var filename := directory.path_join("courtyard-%d.png" % Time.get_ticks_msec())

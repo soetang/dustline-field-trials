@@ -63,7 +63,7 @@ func sync_menu() -> void:
 			button("%d  /  %s   ·   $%d" % [i + 1, Weapons.SPECS[i].name, Weapons.SPECS[i].price], func(): game.buy(i); sync_menu())
 		button("Ready  /  B", game.toggle_buy)
 	else:
-		menu_title.text = "DUSTLINE / NATIVE"
+		menu_title.text = "DUSTLINE / COURTYARD" if OS.has_feature("web") else "DUSTLINE / NATIVE"
 		menu_note.text = "COURTYARD · Single-map tactical experiment\nMIT + CC0 assets • Sol + Astra run\nWASD move • Mouse aim • LMB fire • R reload\nB armory • E defuse • F8 save screenshot"
 		if game.phase == "MATCH OVER":
 			button("Match complete / Play again", game.restart_match)
@@ -75,12 +75,15 @@ func sync_menu() -> void:
 			game.sound.play("start")
 			sync_menu())
 		button("Fullscreen / Windowed  ·  F11", game.toggle_fullscreen)
-		button("Copy feedback details", func(): DisplayServer.clipboard_set(game.details()); game.notify("TEST DETAILS COPIED"))
-		button("Open screenshots folder", func():
-			var directory: String = OS.get_user_data_dir().path_join("screenshots")
-			DirAccess.make_dir_recursive_absolute(directory)
-			OS.shell_open(directory))
-		button("Quit", func(): get_tree().quit())
+		button("Copy feedback details", func(): game.browser.feedback())
+		if OS.has_feature("web"):
+			button("Download screenshot / F8", game.screenshot)
+		else:
+			button("Open screenshots folder", func():
+				var directory: String = OS.get_user_data_dir().path_join("screenshots")
+				DirAccess.make_dir_recursive_absolute(directory)
+				OS.shell_open(directory))
+			button("Quit", func(): get_tree().quit())
 	call_deferred("center_menu")
 
 func center_menu() -> void:

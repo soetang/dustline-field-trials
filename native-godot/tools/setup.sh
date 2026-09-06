@@ -23,9 +23,13 @@ if [[ -d /mnt/c/Windows || "${1:-}" == '--windows' || "${1:-}" == '--templates' 
   unzip -n -q Godot_v4.7.2-stable_win64.exe.zip
   chmod +x Godot_v4.7.2-stable_win64.exe Godot_v4.7.2-stable_win64_console.exe
 fi
-if [[ "${1:-}" == '--templates' ]]; then
-  # Official all-platform archive is 1.28 GB; only desktop release templates are extracted.
+if [[ "${1:-}" == '--templates' || "${1:-}" == '--web' ]]; then
+  # Verify the official archive before extracting the requested platform only.
   fetch Godot_v4.7.2-stable_export_templates.tpz ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079
-  unzip -n -q Godot_v4.7.2-stable_export_templates.tpz templates/windows_release_x86_64.exe templates/windows_release_x86_64_console.exe templates/linux_release.x86_64 templates/version.txt
+  if [[ "${1:-}" == '--web' ]]; then
+    unzip -n -q Godot_v4.7.2-stable_export_templates.tpz templates/web_nothreads_release.zip templates/version.txt
+  else
+    unzip -n -q Godot_v4.7.2-stable_export_templates.tpz templates/windows_release_x86_64.exe templates/windows_release_x86_64_console.exe templates/linux_release.x86_64 templates/version.txt
+  fi
 fi
 echo "Portable Godot is ready in $tool_dir; no account, service or registry changes."

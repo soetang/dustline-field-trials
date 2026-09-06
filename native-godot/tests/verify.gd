@@ -62,6 +62,33 @@ func run() -> void:
 	root.add_child(game)
 	current_scene = game
 	await frames(3)
+	var batching: Dictionary = game.world.batching
+	print("BATCHING ", JSON.stringify(batching))
+	check(batching.source_boxes > 1000 and batching.batches < batching.source_boxes / 2, "Static scenery boxes are grouped into local render batches")
+	check(batching.bodies_before == batching.bodies_after and batching.bodies_after > 0, "Render batching preserves every collision body")
+	var instances := 0
+	for batch in game.world.find_children("*", "MultiMeshInstance3D", true, false):
+		instances += batch.multimesh.instance_count
+	check(instances == batching.source_boxes, "Every batched box has exactly one render instance")
+	# A rotated, nonuniformly scaled detail must retain all eight world corners.
+	var detail := MeshInstance3D.new()
+	detail.mesh = BoxMesh.new()
+	detail.mesh.size = Vector3(2, 3, 0.4)
+	detail.position = Vector3(13, 4, -8)
+	detail.rotation = Vector3(0.3, 1.2, 0.1)
+	detail.scale = Vector3(0.7, 1.1, 2)
+	game.world.add_child(detail)
+	var expected: Transform3D = detail.global_transform * Transform3D(Basis.from_scale(detail.mesh.size), Vector3.ZERO)
+	# The headless renderer does not retain GPU MultiMesh transform storage.
+	var actual: Transform3D = game.world.global_transform * game.world.box_transform(detail)
+	var corners_match := true
+	for x in [-0.5, 0.5]:
+		for y in [-0.5, 0.5]:
+			for z in [-0.5, 0.5]:
+				var corner := Vector3(x, y, z)
+				corners_match = corners_match and (expected * corner).is_equal_approx(actual * corner)
+	check(corners_match, "Batching preserves rotated and scaled detail corners")
+	detail.queue_free()
 	check(game.bots.size() == 9, "5 versus 5 actors spawned")
 	game.set_paused(false)
 	var initial: Vector3 = game.player.position

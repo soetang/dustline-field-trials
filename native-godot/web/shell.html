@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101c23">
+  <meta name="description" content="Courtyard: an open-source tactical FPS experiment, inspired by CS. An experimental Sol + Astra run.">
+  <title>Dustline / Courtyard — browser preview</title>
+  $GODOT_HEAD_INCLUDE
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101c23;color:#eeeadd;font:16px system-ui,sans-serif}
+    [hidden]{display:none!important}canvas{display:block;width:100%;height:100%;outline:none;touch-action:none}
+    .overlay{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:linear-gradient(145deg,#172b35,#10191f);padding:24px}
+    .card{width:min(550px,100%);padding:32px;border:1px solid #526b74;background:#111e27;box-shadow:0 24px 80px #0007}
+    h1{font-size:clamp(32px,7vw,56px);line-height:1;margin:16px 0 24px;letter-spacing:.08em;text-transform:uppercase}
+    h2{margin:0 0 16px}.eyebrow{font-size:12px;color:#e9bb76;letter-spacing:.14em;text-transform:uppercase}
+    p{line-height:1.5}small{display:block;color:#a7bbc5;line-height:1.5}progress{width:100%;height:9px;margin:16px 0 24px;accent-color:#e9bb76}
+    button,a{font:inherit}button{cursor:pointer;border:1px solid #84949b;background:#e9bb76;color:#16202a;padding:12px 20px;font-weight:650}
+    a{color:#9fd0df}button:focus-visible,a:focus-visible{outline:3px solid #fff;outline-offset:3px}.actions{display:flex;align-items:center;flex-wrap:wrap;gap:20px;margin-top:22px}
+    textarea{width:100%;height:240px;resize:vertical;background:#0c161d;color:#eeeadd;border:1px solid #526b74;padding:12px;font:12px ui-monospace,monospace}
+    #failure{white-space:pre-wrap;overflow-wrap:anywhere;color:#efb49b;font-size:14px;max-height:180px;overflow:auto}
+    #feedback{background:#10191fde}
+  </style>
+</head>
+<body>
+  <canvas id="canvas" tabindex="0" aria-label="Courtyard tactical first-person game"></canvas>
+  <section id="loading" class="overlay" aria-live="polite">
+    <div class="card">
+      <div class="eyebrow">Open-source Godot edition · Sol + Astra experiment</div>
+      <h1>Courtyard</h1>
+      <p id="status">Downloading the arena. First load may take a moment.</p>
+      <progress id="progress"></progress>
+      <small>Keyboard + mouse preview · WASD move · Left click fire<br>Press Enter / Deploy when the game menu appears.<br>The original browser game still supports mobile touch controls.</small>
+      <pre id="failure" hidden></pre>
+      <div class="actions"><button id="retry" hidden>Retry startup</button><button id="load-preview" hidden>Load keyboard/mouse preview</button><a class="previous" href="../../">Original browser game</a></div>
+    </div>
+  </section>
+  <section id="feedback" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+    <div class="card">
+      <h2 id="feedback-title">Share feedback</h2>
+      <p>Copy these details and tell us what happened. Nothing uploads automatically.</p>
+      <textarea id="feedback-text" readonly aria-label="Game diagnostic details"></textarea>
+      <div class="actions"><button id="copy-feedback">Copy details</button><button id="close-feedback">Back to game</button></div>
+      <small id="copy-status"></small>
+    </div>
+  </section>
+  <script src="$GODOT_URL"></script>
+  <script>
+    'use strict';
+    const config = $GODOT_CONFIG;
+    const canvas = document.getElementById('canvas');
+    const loading = document.getElementById('loading');
+    const status = document.getElementById('status');
+    const progress = document.getElementById('progress');
+    const failure = document.getElementById('failure');
+    const retry = document.getElementById('retry');
+    window.courtyardFeedback = details => {
+      document.getElementById('feedback-text').value = details;
+      document.getElementById('feedback').hidden = false;
+      document.getElementById('copy-feedback').focus();
+    };
+    document.getElementById('copy-feedback').onclick = async () => {
+      const field = document.getElementById('feedback-text');
+      try { await navigator.clipboard.writeText(field.value); document.getElementById('copy-status').textContent='Copied.'; }
+      catch { field.focus(); field.select(); document.getElementById('copy-status').textContent='Select and copy the text above.'; }
+    };
+    document.getElementById('close-feedback').onclick = () => { document.getElementById('feedback').hidden=true; canvas.focus(); };
+    retry.onclick = () => { const url=new URL(location.href); url.searchParams.set('retry',Date.now()); location.replace(url.href); };
+    function fail(error) {
+      console.error(error); loading.hidden=false; status.textContent='Unable to start Courtyard.';
+      failure.textContent=String(error.message || error); failure.hidden=false; retry.hidden=false; progress.hidden=true;
+    }
+    function start() {
+    document.getElementById('load-preview').hidden=true;
+    progress.hidden=false;
+    if (typeof Engine === 'undefined') { fail(new Error('The engine loader could not be downloaded. Please retry.')); return; }
+    const missing = Engine.getMissingFeatures({threads:false});
+    if (missing.length) fail(new Error('Required browser features are missing: '+missing.join(', ')+'. Try a WebGL2-capable browser with hardware acceleration enabled.'));
+    else {
+      const engine = new Engine(config);
+      engine.startGame({onProgress:(current,total)=>{
+        if(total>0){progress.max=total;progress.value=current;status.textContent='Loading arena · '+Math.round(current/total*100)+'%';}
+      }}).then(()=>{
+        status.textContent='Preparing the field…';
+        const deadline=Date.now()+90000;
+        const ready=setInterval(()=>{
+          if(window.courtyardState){clearInterval(ready);loading.hidden=true;canvas.focus();}
+          else if(Date.now()>deadline){clearInterval(ready);fail(new Error('The engine loaded, but the arena did not finish starting. Please retry.'));}
+        },100);
+      }).catch(fail);
+    }
+    }
+    if (matchMedia('(pointer:coarse)').matches) {
+      status.textContent='This Courtyard preview needs a keyboard and mouse. For touch play, use the original browser game below.';
+      progress.hidden=true;
+      document.getElementById('load-preview').hidden=false;
+      document.getElementById('load-preview').onclick=start;
+    } else start();
+  </script>
+</body>
+</html>

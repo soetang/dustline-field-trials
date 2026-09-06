@@ -16,11 +16,13 @@ var muted := false:
 func _ready() -> void:
 	for i in 12:
 		var voice := AudioStreamPlayer.new()
+		if OS.has_feature("web"): voice.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 		voice.bus = "Master"
 		add_child(voice)
 		voices.append(voice)
 	for i in 16:
 		var voice := AudioStreamPlayer3D.new()
+		if OS.has_feature("web"): voice.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 		voice.bus = "Master"
 		voice.max_db = -6
 		voice.unit_size = 7
