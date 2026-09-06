@@ -65,17 +65,38 @@ const { launchBrowser } = require('../../scripts/browser-options');
         class ObservedAudioContext extends Original {
           constructor(...args) {
             super(...args);
-            const analyser = this.createAnalyser();
             const connect = AudioNode.prototype.connect;
             const context = this;
+            const sources = new Set();
+            const probe = {context, peak:0, meter:null, error:null};
+            window.courtyardAudioProbe.push(probe);
             AudioNode.prototype.connect = function(destination, ...ports) {
-              if (destination === context.destination && this !== analyser) connect.call(this, analyser);
+              if (destination === context.destination && this !== probe.meter) {
+                sources.add(this);
+                if (probe.meter) connect.call(this, probe.meter);
+              }
               return connect.call(this, destination, ...ports);
             };
-            const probe = {context, peak:0};
-            window.courtyardAudioProbe.push(probe);
-            const data = new Float32Array(analyser.fftSize);
-            setInterval(() => { analyser.getFloatTimeDomainData(data); for (const value of data) probe.peak = Math.max(probe.peak, Math.abs(value)); }, 15);
+            // Accumulate peaks on the AUDIO thread, not a JS timer. A software
+            // renderer can block the main thread longer than an entire gunshot.
+            // This monitor branch outputs silence; only the game creates sound.
+            const code = `class PeakMeter extends AudioWorkletProcessor {
+              constructor() { super(); this.peak=0; }
+              process(inputs, outputs) {
+                let peak=this.peak;
+                for (const channel of inputs[0] || []) for (const sample of channel) peak=Math.max(peak,Math.abs(sample));
+                if (peak>this.peak+.0001) { this.peak=peak; this.port.postMessage(peak); }
+                for (const output of outputs) for (const channel of output) channel.fill(0);
+                return true;
+              }
+            } registerProcessor('courtyard-test-peak',PeakMeter);`;
+            const moduleURL = URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
+            this.audioWorklet.addModule(moduleURL).then(() => {
+              probe.meter = new AudioWorkletNode(this,'courtyard-test-peak',{outputChannelCount:[1]});
+              probe.meter.port.onmessage = event => { probe.peak=Math.max(probe.peak,event.data); };
+              connect.call(probe.meter,context.destination);
+              for (const source of sources) connect.call(source,probe.meter);
+            }).catch(error => { probe.error=String(error); }).finally(() => URL.revokeObjectURL(moduleURL));
           }
         }
         window.AudioContext = ObservedAudioContext;
@@ -134,7 +155,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
     await page.keyboard.press('KeyR');
     await page.waitForFunction(() => window.courtyardState.reload_left > 0);
     await page.waitForFunction(() => window.courtyardState.ammo === 30 && window.courtyardState.reload_left === 0);
-    const audio = await page.evaluate(() => window.courtyardAudioProbe.map(p => ({state:p.context.state, peak:p.peak})));
+    await page.waitForFunction(() => window.courtyardAudioProbe.some(p => p.peak>.001),null,{timeout:15000,polling:100}).catch(() => {});
+    const audio = await page.evaluate(() => window.courtyardAudioProbe.map(p => ({state:p.context.state, peak:p.peak, error:p.error})));
     assert.ok(audio.some(p => p.state === 'running' && p.peak > .001), `No real browser audio signal: ${JSON.stringify(audio)}`);
     console.log('Reload and audible engine output passed:', audio);
     await page.screenshot({path:path.join(artifacts,'gameplay.png')});

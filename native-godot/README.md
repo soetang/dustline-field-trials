@@ -46,6 +46,8 @@ move/look/fire/reload, generated audio reaching a running browser audio context,
 PNG screenshot download, and pause/resume. Test instrumentation observes audio
 and avoids headless pointer warps; it never changes game state or its clock.
 The export also has an allowlist, SHA-256 file manifest and size budgets.
+The audio meter accumulates real output peaks in an AudioWorklet, so slow
+software-rendered frames cannot hide a short sound between main-thread polls.
 
 In the browser, **F8 downloads a PNG**. **Escape → Copy feedback details** opens
 a selectable/copyable text panel; no clipboard permission is required just to
