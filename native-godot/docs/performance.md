@@ -185,6 +185,48 @@ node native-godot/tests/presentation-state-cache-check.js
 node native-godot/tests/map-review-browser.js --gameplay-profile --presentation-abba --profile-steady --windows-render-only --duration=12 --width=1920 --height=882 --capture
 ```
 
+### Matched custom-engine comparison: localized gain, not a general fix
+
+Both custom engines are now built with identical toolchain/flags; the only
+native difference is allocation-time framebuffer validation. That change alone
+removed the targeted hot query but did not clearly improve whole-frame FPS.
+Combining it with presentation-state caching was then tested without either
+the CPU sampler or GPU observer, in control → combined → combined → control
+order. Each fresh isolated Windows Chrome profile used 60 warmup and 180 timed
+frames per view at unchanged High 1920×882, with nine animated operators and
+no AI/audio. The new crate prototype stayed disabled.
+
+| View | Control mean FPS | Combined mean FPS | Control p99, ms | Combined p99, ms |
+|---|---:|---:|---:|---:|
+| CT spawn | 16.63–16.79 | 16.64–16.91 | 138.5–139.0 | 100.5–129.9 |
+| A site | 27.05–27.39 | 30.98–31.66 | 89.3–94.0 | 60.9–80.2 |
+| Long doors | 20.90–21.32 | 21.04–21.82 | 101.8–113.4 | 70.9–73.6 |
+
+Ranges cover the two windows per configuration. A site's pooled mean FPS is
+about 15% higher, but there is essentially no mean-FPS gain at spawn and only
+a small change at long doors. p99 improves in these samples; p95 does not improve
+consistently. Short-window percentiles are not long-session stability guarantees.
+All four captures of each view have identical PNG hashes, draw counts and
+primitive counts. Native cache-state validation passes. No agent compiler or
+other agent renderer ran during these windows; wider host load/thermal state
+was not controlled. The lower absolute rates versus earlier short tests are
+another reason not to turn this into a universal speedup claim.
+
+[Raw frames, runtime hashes and screenshot hashes](performance-engine-abba.json)
+preserve all twelve windows. The combined CPU profile from the preceding short
+instrumented pass showed mostly idle samples after the two blocking query
+families disappeared; that is not proof of pure GPU busy time or evidence that
+moving more GDScript into Rust will recover the remaining frame budget.
+**Neither experimental engine change is in the public runtime.**
+
+The [engine verification instructions](../engine/README.md) include fast mock
+tests of the actual C++ function bodies and a separate real-WebGL lifecycle
+fixture. Its official-engine remote review passed 65 assertions, including
+retained depth storage, actual 2×/4× allocation calls and resized PNG dimensions.
+The earlier local baseline and combined-engine runs passed 62 assertions each;
+all six stage screenshots were byte-identical. Correctness and performance
+evidence are recorded separately.
+
 ## Isolated ambient-occlusion diagnostic (not a same-quality fix)
 
 Godot 4.7.2 Compatibility **does run SSAO**. An old source comment incorrectly
