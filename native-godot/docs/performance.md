@@ -102,6 +102,13 @@ compare waypoint/replan decisions, shot arguments, contact state and RNG state.
 This reduces actual computation without reducing AI cadence or changing aim;
 it cannot explain a render-only fixture with AI disabled.
 
+Room-union membership now uses an exact 7,920-byte lookup for the current
+integer-edged layout, replacing repeated 16-rectangle scans. Negative coordinates
+and half-open room edges retain the original semantics; fractional or unsupported
+future layouts fall back to the original predicate. Tests compare 38,255 points,
+five clearance radii and every navigation cell. This changes neither collision
+geometry nor path sampling, and is not yet a measured browser-FPS improvement.
+
 ## Reproduce and inspect
 
 From the repository root, with the official Godot web templates installed:

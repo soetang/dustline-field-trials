@@ -48,6 +48,8 @@ const DOORS := [
 const CT_SUPPORTS := [Rect2(-7.9,-35.5,0.6,0.6),Rect2(-7.9,-29,0.6,0.6),
 	Rect2(11.5,-35.5,0.6,0.6),Rect2(11.5,-29,0.6,0.6)]
 
+static var _room_lookup_ready := false
+static var _room_cells := PackedByteArray()
 var nav := AStarGrid2D.new()
 
 func _init() -> void:
@@ -71,10 +73,41 @@ static func on_floor(p: Vector3) -> Vector3:
 	return Vector3(p.x, floor_height(Vector2(p.x, p.z)), p.z)
 
 static func inside(p: Vector2) -> bool:
+	if not _room_lookup_ready:
+		_room_cells = _build_room_lookup(ROOMS, BOUNDS)
+		_room_lookup_ready = true
+	# Whole-unit room edges make this an exact union lookup, not a coarse
+	# navigation approximation. Rect2 includes its start and excludes its end;
+	# floor selects precisely the same half-open cell, including negative x/z.
+	# Preserve the original predicate for unusual nonfinite inputs and layouts
+	# with fractional/out-of-bounds rooms, instead of rounding their geometry.
+	if _room_cells.is_empty() or not p.is_finite(): return _inside_rectangles(p)
+	if p.x < BOUNDS.position.x or p.y < BOUNDS.position.y or p.x >= BOUNDS.end.x or p.y >= BOUNDS.end.y:
+		return false
+	var x := floori(p.x) - BOUNDS.position.x
+	var y := floori(p.y) - BOUNDS.position.y
+	return _room_cells[y * BOUNDS.size.x + x] != 0
+
+static func _inside_rectangles(p: Vector2) -> bool:
 	for room in ROOMS:
 		if room.has_point(p):
 			return true
 	return false
+
+static func _build_room_lookup(rooms: Array, bounds: Rect2i) -> PackedByteArray:
+	var result := PackedByteArray()
+	if bounds.size.x <= 0 or bounds.size.y <= 0: return result
+	for room: Rect2 in rooms:
+		if room.position != room.position.floor() or room.end != room.end.floor() or room.size.x < 0 or room.size.y < 0:
+			return result
+		if not Rect2(bounds).encloses(room): return result
+	result.resize(bounds.size.x * bounds.size.y)
+	for room: Rect2 in rooms:
+		for y in range(int(room.position.y), int(room.end.y)):
+			var row := (y - bounds.position.y) * bounds.size.x - bounds.position.x
+			for x in range(int(room.position.x), int(room.end.x)):
+				result[row + x] = 1
+	return result
 
 static func clear(p: Vector2, radius: float = 0.38) -> bool:
 	# Check the union, not individual shrunken rooms: connected doorways stay open.
