@@ -32,8 +32,28 @@ models and procedural skeletal animation. Elbows and knees bend; walking,
 running, backing up and strafing use movement-driven steps. Both hands follow
 the weapon when aiming or firing, and the support hand reaches toward the
 magazine during reloads. Head/torso aim and breathing add small idle movement.
-This is an early animation pass, not motion capture or a finished character set;
-turn-in-place foot planting and slope-specific foot placement still need work.
+This is an early animation pass, not motion capture or a finished character set.
+Version 0.4.1 samples the existing terrain height for foot placement, holds
+planted soles in world space, and alternates foot lifts during idle turns.
+Small pelvis shifts keep downhill/accelerating steps within reach without
+stretching legs. These visual changes do not change bullet damage or bot aim.
+
+[![Grounded operator animation study on a slope](docs/operator-slope.png)](docs/grounded-motion.webm)
+
+[Watch/download the six-second animation study](docs/grounded-motion.webm)
+(1.3 MB, 60 fps). This is an offline, exact-timestep Godot render of walking,
+turning and reloading, **not a live gameplay recording or performance benchmark**.
+
+The original desert layout now has a shaded CT undercroft beneath a residence,
+with a balcony, shutters and a clear exit along the elevated A ramp. Mid and
+long use partly open reinforced double doors with roughly 1.4 m gaps instead
+of fully open leaves. Door collision, navigation and radar share their rotated
+footprints. This remains original geometry, not a Valve map or asset extraction.
+
+![The new CT residence and covered spawn, staged WebGL2 renderer capture](docs/ct-undercroft.png)
+
+Actual 0.4.1 architecture-review capture from the browser renderer, with a staged
+camera and actors hidden. No new downloaded textures are used by this building.
 
 Each operator uses one mesh, three material surfaces and 18 bones: CT has
 4,312 triangles / 243,476 bytes, T has 4,224 triangles / 240,712 bytes, versus
@@ -62,7 +82,7 @@ development tools only, never published). Builds are separate candidates under
 `builds/web-releases/`; `builds/web-candidate.txt` selects the latest export.
 No desktop executable, desktop release pointer or existing browser game is replaced.
 Serve the candidate directory over HTTP, not `file://`, to play locally.
-The 0.4 export is about 45.9 MiB uncompressed, or 17.5 MiB using local gzip;
+The 0.4.1 export is about 45.9 MiB uncompressed, or 17.5 MiB using local gzip;
 actual HTTP transfer depends on the host. Engine and game pack URLs are pinned
 to one immutable release to avoid mixing cached builds.
 
@@ -75,7 +95,7 @@ The export also has an allowlist, SHA-256 file manifest and size budgets.
 The audio meter accumulates real output peaks in an AudioWorklet, so slow
 software-rendered frames cannot hide a short sound between main-thread polls.
 The test also records actual WebAssembly linear-memory capacity in `memory.json`.
-The local 0.4 sample held at 66.5 MiB from startup through the short playtest;
+The local 0.4.1 sample held at 66.5 MiB from startup through the short playtest;
 that excludes JS, browser, GPU and other process allocations and is **not total
 RAM usage**. Export size and this heap measurement must not be conflated.
 
@@ -207,7 +227,8 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks, 60 operator checks, 12 input checks,
+The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks,
+60 operator checks, 30 ground-foot checks, 26 map-update checks, 12 input checks,
 33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse
@@ -227,8 +248,8 @@ muted (four checks). This captures only the game's mixer, never a microphone or
 other applications. The fast audio suite checks bounded voice reuse, distance
 culling, source placement, pause and spectator listener ownership.
 Four render-batching checks cover instance counts, collision-body preservation
-and transformed box corners. The initial map groups 1,296 static box details
-into 279 local batches while preserving all 47 static collision bodies. Those
+and transformed box corners. The 0.4.1 map groups 1,376 static box details
+into 298 local batches while preserving all 53 static collision bodies. Those
 are scene counts, not a claim about final draw calls or FPS.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
@@ -246,6 +267,18 @@ not live gameplay. `bash native-godot/tools/render-background.sh --label=review`
 uses a private Xvfb display (requires Xvfb/xkbcomp), with no desktop fallback.
 Software-rendered screenshots are useful for pose review, not hardware FPS.
 
+`bash native-godot/tools/render-background.sh --map --label=review` captures the
+new CT building, undercroft, A exit and both doorways without touching the desktop.
+If native software rendering is too slow, `node native-godot/tests/map-review-browser.js`
+uses background Chrome and a temporary, separately exported review scene. It
+preserves the game's lighting and assets, but stages cameras and hides actors:
+these are architecture-review images, not gameplay or FPS measurements. Neither
+the review scene nor its test commands are included in the playable release.
+Add `--motion-study --label=study` to an operator review to render 360 exact-timestep
+frames of uphill walking, turning and reloading. Encode those with
+`blender --background --python native-godot/tools/encode_study.py -- study`.
+That six-second, 60 fps offline animation study is **not a gameplay FPS recording**.
+
 `tests/visual.gd` runs a native renderer smoke test and saves labelled staged
 views under `builds/captures`. It exercises movement, shooting and reloading;
 the later staged viewpoints are visual tests, not a continuous gameplay clip.
@@ -253,9 +286,9 @@ the later staged viewpoints are visual tests, not a continuous gameplay clip.
 ## Open-source provenance
 
 All project code, map geometry, shaders, sounds and original models are MIT
-licensed; see [LICENSE](LICENSE). The six GLBs are copies of this repository's
-own Blender-authored models, generated by `../scripts/make-operators.py` and
-`../scripts/make-weapons.py`. Six concrete surface textures are **CC0 from Poly
+licensed; see [LICENSE](LICENSE). The two skinned operators are generated by
+`tools/make_operators.py`; four first-person weapons are copies of the original
+Blender-authored models from `../scripts/make-weapons.py`. Six concrete surface textures are **CC0 from Poly
 Haven**, copied unchanged from the browser project's documented assets. Exact
 URLs and checksums are in [the texture manifest](assets/textures/sources.json);
 see [asset provenance](licenses/ASSET-SOURCES.txt). There are no third-party audio
