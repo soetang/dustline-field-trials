@@ -15,19 +15,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
 (async () => {
   const project = path.resolve(__dirname, '..');
   const benchmark = process.argv.includes('--benchmark');
+  const engineLifecycle = process.argv.includes('--engine-lifecycle');
+  const expectCachedBackbuffer = process.argv.includes('--expect-cached-backbuffer');
   const wallReview = process.argv.includes('--wall-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
   const presentationAbba = process.argv.includes('--presentation-abba');
+  const presentationCache = process.argv.includes('--presentation-cache');
   const gpuTiming = process.argv.includes('--gpu-timing');
   const crateDetail = process.argv.includes('--crate-detail');
-  assert.ok(!crateDetail || (!wallReview && !gameplayProfile),'Crate prototype is only available in map/render fixtures');
+  assert.ok(!crateDetail || (!wallReview && !gameplayProfile && !engineLifecycle),'Crate prototype is only available in map/render fixtures');
   assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
   assert.ok(!presentationAbba || (gameplayProfile && !navigationAbba),'Presentation ABBA requires --gameplay-profile without --navigation-abba');
+  assert.ok(!presentationCache || ((benchmark || engineLifecycle) && !presentationAbba),'Fixed presentation cache is only available in render/engine fixtures');
   assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
     'GPU timing requires an isolated benchmark or gameplay profile without other experiments');
-  assert.ok([benchmark,wallReview,gameplayProfile].filter(Boolean).length <= 1,'Choose one review/profile mode');
-  const longFixture = benchmark || wallReview || gameplayProfile;
+  assert.ok([benchmark,wallReview,gameplayProfile,engineLifecycle].filter(Boolean).length <= 1,'Choose one review/profile mode');
+  const longFixture = benchmark || wallReview || gameplayProfile || engineLifecycle;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
   assert.ok(!steadyProfile || ((benchmark || gameplayProfile) && !process.argv.includes('--profile')),
@@ -40,8 +44,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
   let release = path.join(project, 'builds/web-releases', candidate);
   const engineTemplateArg=process.argv.find(arg=>arg.startsWith('--engine-template='))?.slice('--engine-template='.length);
   const engineTemplate=engineTemplateArg && path.resolve(engineTemplateArg);
-  assert.ok(!engineTemplate || (benchmark && engineTemplate.endsWith('.zip') && fs.statSync(engineTemplate).isFile()),
-    'Custom engine templates are allowed only in isolated benchmarks');
+  assert.ok(!engineTemplate || ((benchmark || engineLifecycle) && engineTemplate.endsWith('.zip') && fs.statSync(engineTemplate).isFile()),
+    'Custom engine templates are allowed only in isolated render/engine fixtures');
+  assert.ok(!expectCachedBackbuffer || (engineLifecycle && engineTemplate),'Cached-backbuffer expectation requires a custom engine lifecycle fixture');
   const artifacts = fs.mkdtempSync(path.resolve(project, '../artifacts/map-review-browser-'));
   const reviewProject = path.join(artifacts,'project');
   fs.mkdirSync(reviewProject);
@@ -111,7 +116,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (gpuTiming) fs.copyFileSync(path.join(__dirname,'gpu_profile.gd'),path.join(reviewProject,'_gpu_profile.gd'));
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
-  let reviewScript = fs.readFileSync(path.join(__dirname,gameplayProfile ? 'gameplay_profile.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
+  let reviewScript = fs.readFileSync(path.join(__dirname,engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
@@ -148,11 +153,12 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (navigationAbba) args.push('--navigation-abba');
   if (presentationAbba) args.push('--presentation-abba');
   if (gpuTiming) args.push('--gpu-timing');
+  if (expectCachedBackbuffer) args.push('--expect-cached-backbuffer');
   for (const arg of process.argv.slice(2))
     if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
-  const width = benchmark || gameplayProfile ? dimension('width',gameplayProfile ? 1280 : 640) : 960;
-  const height = benchmark || gameplayProfile ? dimension('height',gameplayProfile ? 720 : 360) : wallReview ? 441 : 540;
+  const width = benchmark || gameplayProfile || engineLifecycle ? dimension('width',gameplayProfile ? 1280 : 640) : 960;
+  const height = benchmark || gameplayProfile || engineLifecycle ? dimension('height',gameplayProfile ? 720 : 360) : wallReview ? 441 : 540;
   const html = `<!doctype html><html><body style="margin:0"><canvas id="canvas" width="${width}" height="${height}"></canvas>
     <script src="index.js"></script><script>
       window.mapReviewCaptures=[];
@@ -179,8 +185,12 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
-    if (presentationAbba) await page.addInitScript({path:path.join(project,'engine/experiments/presentation-state-cache.js')});
+    if (presentationAbba || presentationCache) {
+      const source=fs.readFileSync(path.join(project,'engine/experiments/presentation-state-cache.js'),'utf8');
+      await page.addInitScript({content:source+(presentationCache ? '\nwindow.presentationStateCache.setEnabled(true);' : '')});
+    }
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
+    if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (windowsRenderOnly) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
@@ -197,7 +207,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
       console.log(message.text());
       if (message.type() === 'error') failures.push(message.text());
     });
-    page.on('pageerror', error => failures.push(error.message));
+    page.on('pageerror', error => {
+      failures.push(error.message);
+      logs.push(`pageerror: ${error.message}`);
+      console.error('Page error:',error.message);
+    });
     let profiler;
     if (process.argv.includes('--profile')) {
       profiler=await page.context().newCDPSession(page);
@@ -243,10 +257,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
       : presentationAbba ? ['native-before','cache-before','cache-after','native-after']
       : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
       : ['control-before','profile-before','profile-after','control-after'];
-    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? expectedGameplay : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    assert.deepEqual(captures.map(c => c.name),engineLifecycle ? ['depth-only','depth-and-color','resized','msaa-2x','msaa-4x','restored'] : gameplayProfile ? expectedGameplay : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    if (engineLifecycle) {
+      const summary=await page.evaluate(() => window.engineLifecycleSummary);
+      assert.equal(summary.stages,6);
+      assert.equal(summary.failures,0,'All real framebuffer lifecycle assertions pass');
+      assert.ok(summary.checks>0);
+    }
     if (gameplayProfile) for (const capture of captures) assert.deepEqual(capture.camera,captures[0].camera,'All windows use an identical observer camera');
     for (const capture of captures) {
-      assert.match(capture.name,/^[a-z-]+$/);
+      assert.match(capture.name,/^[a-z0-9-]+$/);
+      if (engineLifecycle) {
+        assert.equal(capture.failures,0,`${capture.name}: engine lifecycle checks`);
+        assert.equal(capture.expect_cached_backbuffer,expectCachedBackbuffer);
+        assert.equal(capture.steady_frames,12);
+        assert.equal(capture.steady_audit.contexts,1);
+        if (!capture.png) continue;
+      }
       if (gpuTiming) {
         const gpu=capture.gpu_timing;
         assert.ok(gpu && typeof gpu.supported === 'boolean','GPU probe reports availability and sample state');
@@ -309,13 +336,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
       const png = Buffer.from(capture.png,'base64');
       assert.equal(png.readUInt32BE(0),0x89504e47);
+      if (engineLifecycle) assert.deepEqual([png.readUInt32BE(16),png.readUInt32BE(20)],capture.resolution,
+        'Readback dimensions reflect actual viewport resize');
       fs.writeFileSync(path.join(artifacts,capture.name+'.png'),png);
       delete capture.png;
     }
-    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,crate_prototype:crateDetail,staged:true,args,captures},null,2)+'\n');
+    const presentationState = presentationCache ? await page.evaluate(() => window.presentationStateCache.snapshot()) : null;
+    if (presentationCache) {
+      assert.equal(presentationState.length,1);
+      const state=presentationState[0];
+      assert.equal(state.enabled,true);
+      assert.ok(state.hits > 0,'Cached presentation state was used');
+      assert.deepEqual(state.validation,{lost:false,scissor:true,draw:true},'Cached state still matches native state');
+    }
+    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,crate_prototype:crateDetail,staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
-    assert.ok(logs.some(line => line.includes(gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
+    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');
