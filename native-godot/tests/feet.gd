@@ -23,6 +23,7 @@ func run() -> void:
 		["south slope", Vector3(-9,0,17), Vector3(0,0,2.1), 0.0],
 		["turn on slope", Vector3(8,0,-29), Vector3.ZERO, 0.8],
 		["flat turn", Vector3.ZERO, Vector3.ZERO, -1.2],
+		["start stop turn on slope", Vector3(6,0,-29), Vector3.ZERO, 0.0],
 	]
 	for entry in cases:
 		var model: Node3D = Models.ASSETS.ct_operator.instantiate()
@@ -42,11 +43,15 @@ func run() -> void:
 		var previous_stance: Array[bool] = [false,false]
 		for frame in 240:
 			var dt := 1.0/60
+			var yaw_rate: float = entry[3]
+			if entry[0] == "start stop turn on slope":
+				velocity = Vector3(1.5,0,0) if frame >= 60 and frame < 120 else Vector3(-1.5,0,0) if frame >= 180 else Vector3.ZERO
+				yaw_rate = 0.8 if velocity == Vector3.ZERO else 0.0
 			at += velocity * dt
 			at.y = Layout.floor_height(Vector2(at.x,at.z))
-			yaw += float(entry[3]) * dt
+			yaw += yaw_rate * dt
 			var body := Transform3D(Basis(Vector3.UP,yaw),at)
-			rig.update_pose(dt,body.basis.inverse()*velocity,Vector2.ZERO,0,false,false,entry[3],body,Layout.floor_height)
+			rig.update_pose(dt,body.basis.inverse()*velocity,Vector2.ZERO,0,false,false,yaw_rate,body,Layout.floor_height)
 			for i in 2:
 				var foot: int = rig.ids["foot_l" if i==0 else "foot_r"]
 				var posed := body * rig.pose[foot]

@@ -4,6 +4,15 @@ extends RefCounted
 const FootPlacement = preload("res://scripts/foot_placement.gd")
 const Layout = preload("res://scripts/layout.gd")
 
+class Limb:
+	var upper: int
+	var lower: int
+	var end: int
+	var first: float
+	var second: float
+	var upper_direction: Vector3
+	var lower_direction: Vector3
+
 ## Eighteen cached bones, analytical two-link IK, no animation textures/clips,
 ## no extra physics queries. Visual poses never move an actor's hit capsule.
 var skeleton: Skeleton3D
@@ -27,6 +36,9 @@ var flash_left := 0.0
 var grounding := FootPlacement.new()
 var foot_rests: Array[Transform3D] = []
 var foot_targets: Array[Transform3D] = []
+var arms: Array[Limb] = []
+var legs: Array[Limb] = []
+var weapon_rest_inverse: Transform3D
 
 func setup(root: Node3D) -> void:
 	model = root
@@ -37,7 +49,11 @@ func setup(root: Node3D) -> void:
 		local_rest.append(skeleton.get_bone_rest(i))
 		pose.append(rest[i])
 		parents.append(skeleton.get_bone_parent(i))
-	for side in ["l", "r"]: foot_rests.append(rest[ids["foot_" + side]])
+	for side in ["l", "r"]:
+		foot_rests.append(rest[ids["foot_" + side]])
+		arms.append(cache_limb(ids["upperarm_" + side],ids["forearm_" + side],ids["hand_" + side]))
+		legs.append(cache_limb(ids["thigh_" + side],ids["shin_" + side],ids["foot_" + side]))
+	weapon_rest_inverse = rest[ids.weapon].affine_inverse()
 	flash = MeshInstance3D.new()
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.025
@@ -53,6 +69,19 @@ func setup(root: Node3D) -> void:
 	flash.visible = false
 	model.add_child(flash)
 
+func cache_limb(upper: int, lower: int, end: int) -> Limb:
+	var limb := Limb.new()
+	limb.upper = upper
+	limb.lower = lower
+	limb.end = end
+	var first := rest[lower].origin - rest[upper].origin
+	var second := rest[end].origin - rest[lower].origin
+	limb.first = first.length()
+	limb.second = second.length()
+	limb.upper_direction = first.normalized()
+	limb.lower_direction = second.normalized()
+	return limb
+
 func on_shot() -> void:
 	recoil = 1
 	flash_left = 0.045
@@ -67,8 +96,9 @@ func rotate_bone(bone: String, rotation: Vector3) -> void:
 
 static func joint_at(start: Vector3, end: Vector3, pole: Vector3, first: float, second: float) -> Vector3:
 	var offset := end - start
-	var length := clampf(offset.length(), 0.001, first + second - 0.001)
-	var direction := offset.normalized() if offset.length() > 0.001 else Vector3.DOWN
+	var distance := offset.length()
+	var length := clampf(distance, 0.001, first + second - 0.001)
+	var direction := offset / distance if distance > 0.001 else Vector3.DOWN
 	var along := (first * first - second * second + length * length) / (2 * length)
 	var perpendicular := pole - start
 	perpendicular -= direction * perpendicular.dot(direction)
@@ -77,17 +107,17 @@ static func joint_at(start: Vector3, end: Vector3, pole: Vector3, first: float, 
 		if perpendicular.length_squared() < 0.00001: perpendicular = direction.cross(Vector3.UP)
 	return start + direction * along + perpendicular.normalized() * sqrt(maxf(0, first * first - along * along))
 
-func solve_limb(upper: String, lower: String, end: String, goal: Transform3D, pole: Vector3) -> void:
-	var a: int = ids[upper]
-	var b: int = ids[lower]
-	var c: int = ids[end]
+func solve_limb(limb: Limb, goal: Transform3D, pole: Vector3) -> void:
+	var a := limb.upper
+	var b := limb.lower
+	var c := limb.end
 	var start := (pose[parents[a]] * local_rest[a]).origin
-	var first := rest[a].origin.distance_to(rest[b].origin)
-	var second := rest[b].origin.distance_to(rest[c].origin)
+	var first := limb.first
+	var second := limb.second
 	var target := start + (goal.origin - start).limit_length(first + second - 0.001)
 	var joint := joint_at(start, target, pole, first, second)
-	pose[a] = Transform3D(Basis(Quaternion((rest[b].origin - rest[a].origin).normalized(), (joint - start).normalized())) * rest[a].basis, start)
-	pose[b] = Transform3D(Basis(Quaternion((rest[c].origin - rest[b].origin).normalized(), (target - joint).normalized())) * rest[b].basis, joint)
+	pose[a] = Transform3D(Basis(Quaternion(limb.upper_direction, (joint - start).normalized())) * rest[a].basis, start)
+	pose[b] = Transform3D(Basis(Quaternion(limb.lower_direction, (target - joint).normalized())) * rest[b].basis, joint)
 	pose[c] = Transform3D(goal.basis, target)
 
 func flush() -> void:
@@ -98,9 +128,10 @@ func flush() -> void:
 
 func animate(dt: float, actor: Node3D) -> void:
 	if actor.game.paused: return
-	var relative: Vector3 = actor.global_basis.inverse() * (actor.look_goal - actor.eye())
+	var inverse_basis: Basis = actor.global_basis.inverse()
+	var relative: Vector3 = inverse_basis * (actor.look_goal - actor.eye())
 	var look := Vector2(atan2(relative.y, Vector2(relative.x, relative.z).length()), atan2(-relative.x, -relative.z))
-	var moving: Vector3 = actor.global_basis.inverse() * actor.velocity if actor.game.phase == "LIVE" else Vector3.ZERO
+	var moving: Vector3 = inverse_basis * actor.velocity if actor.game.phase == "LIVE" else Vector3.ZERO
 	var yaw_rate := angle_difference(last_yaw, actor.rotation.y) / maxf(dt, 0.001)
 	last_yaw = actor.rotation.y
 	var working: bool = actor.role == "DEFUSE" and actor.game.defuser == actor
@@ -120,6 +151,7 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 	flash_left = maxf(0, flash_left - dt)
 	flash.visible = flash_left > 0 and not dead
 	var speed := Vector2(motion.x, motion.z).length()
+	var motion_direction := motion.normalized()
 	var amount := clampf(speed / 4.65, 0, 1)
 	# A slow walk uses shorter steps. Phase follows real movement, not wall time.
 	var stride := lerpf(0.55, 1.95, amount)
@@ -140,7 +172,7 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 			var swing := (step - 0.46) / 0.54
 			along = -0.5 + smoothstep(0, 1, swing)
 			lift = sin(swing * PI) * 0.15 * amount
-		foot.origin += motion.normalized() * along * stride * 0.46 * minf(speed / 0.5, 1)
+		foot.origin += motion_direction * along * stride * 0.46 * minf(speed / 0.5, 1)
 		foot.origin.y += lift
 		foot.basis = Basis(Vector3.RIGHT, -lift * 0.8) * foot.basis
 		foot_targets.append(foot)
@@ -156,10 +188,9 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 	if height.is_valid():
 		var reachable_y := pose[pelvis].origin.y
 		for i in 2:
-			var side := "l" if i == 0 else "r"
-			var hip: Transform3D = rest[ids["thigh_"+side]]
-			var knee: Transform3D = rest[ids["shin_"+side]]
-			var length := hip.origin.distance_to(knee.origin) + knee.origin.distance_to(foot_rests[i].origin) - 0.003
+			var leg := legs[i]
+			var hip: Transform3D = rest[leg.upper]
+			var length := leg.first + leg.second - 0.003
 			var across := Vector2(foot_targets[i].origin.x-hip.origin.x,foot_targets[i].origin.z-hip.origin.z).length_squared()
 			reachable_y = minf(reachable_y,foot_targets[i].origin.y+sqrt(maxf(0,length*length-across)))
 		# Small weight shifts keep accelerating strides reachable without either
@@ -178,18 +209,17 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 	var gun_rotation := Basis.from_euler(Vector3(aim.x * 0.25 + recoil * 0.045 - reload_blend * 0.28 - (0.2 if working else 0), 0, reload_blend * 0.3))
 	pose[weapon] = Transform3D(gun_rotation * weapon_rest.basis,
 		shoulder + gun_rotation * (weapon_rest.origin - shoulder) + Vector3(0, sin(clock * 2.2) * 0.004, recoil * 0.018))
-	var gun_delta := pose[weapon] * rest[weapon].affine_inverse()
-	for side in ["l", "r"]:
-		var hand := gun_delta * rest[ids["hand_" + side]]
-		if side == "l" and reload_blend > 0:
+	var gun_delta := pose[weapon] * weapon_rest_inverse
+	for i in 2:
+		var hand := gun_delta * rest[arms[i].end]
+		if i == 0 and reload_blend > 0:
 			# Support hand reaches toward the magazine, trigger hand stays on grip.
 			var reload_reach := sin(clampf(reload_left / 2.2, 0, 1) * PI) * reload_blend
 			hand.origin = hand.origin.lerp(gun_delta * Vector3(0.13, 1.20, -0.335), reload_reach)
-		var sign := -1.0 if side == "l" else 1.0
+		var sign := -1.0 if i == 0 else 1.0
 		var pole := pose[chest] * Vector3(sign * 0.45, -0.32, -0.05)
-		solve_limb("upperarm_" + side, "forearm_" + side, "hand_" + side, hand, pole)
-		var foot := foot_targets[0 if side == "l" else 1]
-		solve_limb("thigh_" + side, "shin_" + side, "foot_" + side, foot, Vector3(sign * 0.13, 0.5, -1))
+		solve_limb(arms[i], hand, pole)
+		solve_limb(legs[i], foot_targets[i], Vector3(sign * 0.13, 0.5, -1))
 	flash.position = gun_delta * Vector3(0.13, 1.425, -0.795)
 	flash.basis = gun_delta.basis.scaled(Vector3(0.8, 0.8, 2))
 	if dead:

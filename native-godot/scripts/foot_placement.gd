@@ -29,16 +29,18 @@ static func ground_target(body: Transform3D, foot: Transform3D, rest: Transform3
 		ground + normal * rest.origin.y + Vector3.UP * maxf(0, foot.origin.y - rest.origin.y))
 
 func update(dt: float, body: Transform3D, raw: Array[Transform3D], rests: Array[Transform3D], phase: float, speed: float, height: Callable) -> Array[Transform3D]:
+	var moving := speed > 0.18
 	var desired: Array[Transform3D] = []
 	var neutral: Array[Transform3D] = []
+	# Walking uses stride targets; idle turns use neutral targets. Sample only
+	# the targets consumed below, keeping both sets for the initial stance.
 	for i in 2:
-		desired.append(ground_target(body, raw[i], rests[i], height))
-		neutral.append(ground_target(body, rests[i], rests[i], height))
+		if moving: desired.append(ground_target(body, raw[i], rests[i], height))
+		if not initialized or not moving: neutral.append(ground_target(body, rests[i], rests[i], height))
 	if not initialized:
 		feet = neutral.duplicate()
 		planted = neutral.duplicate()
 		initialized = true
-	var moving := speed > 0.18
 	if moving:
 		turn_foot = -1
 		for i in 2:

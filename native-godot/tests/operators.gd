@@ -2,6 +2,7 @@ extends SceneTree
 
 const Models = preload("res://scripts/models.gd")
 const Rig = preload("res://scripts/operator_rig.gd")
+const Layout = preload("res://scripts/layout.gd")
 var passed := 0
 var failed := 0
 
@@ -13,6 +14,35 @@ func check(ok: bool, message: String) -> void:
 
 func _initialize() -> void:
 	call_deferred("run")
+
+func grounded_cpu_sample(team: String, rig: FieldOperatorRig) -> void:
+	# Precompute a repeatable slope walk/idle-turn fixture, so the sample measures
+	# the same terrain-aware pose work used in gameplay, without fixture setup.
+	var bodies: Array[Transform3D] = []
+	var velocities: Array[Vector3] = []
+	var rates: Array[float] = []
+	var at := Vector3(6,0,-29)
+	var yaw := 0.0
+	for frame in 600:
+		var velocity := Vector3(1.5,0,0) if frame < 120 else (Vector3(-1.5,0,0) if frame < 240 else Vector3.ZERO)
+		var rate := 0.8 if frame >= 240 and frame < 420 else -0.8 if frame >= 420 else 0.0
+		at += velocity / 60.0
+		at.y = Layout.floor_height(Vector2(at.x,at.z))
+		yaw += rate / 60.0
+		var body := Transform3D(Basis(Vector3.UP,yaw),at)
+		bodies.append(body)
+		velocities.append(body.basis.inverse() * velocity)
+		rates.append(rate)
+	var samples: Array[float] = []
+	for run in 6:
+		var started := Time.get_ticks_usec()
+		for frame in bodies.size():
+			rig.update_pose(1.0/60,velocities[frame],Vector2(0.1,0.2),0,false,false,rates[frame],bodies[frame],Layout.floor_height)
+		if run > 0: samples.append((Time.get_ticks_usec()-started)/float(bodies.size()))
+	samples.sort()
+	print("OPERATOR_GROUNDED_CPU_SAMPLE ",team," median_us_per_unit=",samples[2],
+		" min_us=",samples[0]," max_us=",samples[4]," frames_per_sample=600 samples=5",
+		" (headless animation code only, not browser or game frame time)")
 
 func run() -> void:
 	for team in ["ct", "t"]:
@@ -85,6 +115,7 @@ func run() -> void:
 			rig.update_pose(1.0/60,Vector3(0,0,-4.65),Vector2(0.1,0.2),0,false,false)
 		print("OPERATOR_CPU_SAMPLE ",team," mean_us_per_unit=", (Time.get_ticks_usec()-started)/600.0,
 			" (headless animation code only, not game frame time)")
+		grounded_cpu_sample(team,rig)
 		model.queue_free()
 		await process_frame
 	print("OPERATORS: %d/%d passed" % [passed,passed+failed])
