@@ -96,6 +96,7 @@ func _ready() -> void:
 	ground()
 	buildings()
 	landmarks()
+	ct_house()
 	doors()
 	for index in Layout.COVERS.size():
 		crate(Layout.COVERS[index], index)
@@ -344,21 +345,76 @@ func palm(at: Vector3) -> void:
 		branch.rotation = Vector3(0.2, angle, 0)
 
 func doors() -> void:
-	# Open, reinforced wooden leaves. Their exact footprints also feed navigation.
+	# Partly open reinforced leaves, with shared rotated collision/nav footprints.
 	var iron := material(Color("38403b"), 0.62)
 	for index in Layout.DOORS.size():
-		var footprint: Rect2 = Layout.DOORS[index]
-		var center := footprint.get_center()
-		var base := Layout.floor_height(center)
+		var door: Dictionary = Layout.DOORS[index]
+		var hinge: Vector2 = door.hinge
+		var width: float = door.width
+		var center_x: float = door.side * width * 0.5
+		var base := Layout.door_floor(door)
 		var frame := Node3D.new()
 		add_child(frame)
-		frame.position = Vector3(center.x, base, center.y)
+		frame.name = "DoorLeaf%d" % index
+		frame.position = Vector3(hinge.x,base,hinge.y)
+		frame.rotation.y = door.yaw
 		var wood := material(Color("695138") if index % 2 == 0 else Color("735c41"))
-		box(Vector3(0, 1.55, 0), Vector3(footprint.size.x, 3.1, footprint.size.y), wood, true, frame)
+		box(Vector3(center_x,1.55,0),Vector3(width,3.1,0.30),wood,true,frame)
 		for i in 7:
-			var z := (float(i) + 0.5) * footprint.size.y / 7.0 - footprint.size.y * 0.5
+			var x := center_x + (float(i)+0.5)*width/7.0-width*0.5
 			var plank := material(Color("816446").darkened(float(i % 3) * 0.055))
-			box(Vector3(0, 1.55, z), Vector3(footprint.size.x + 0.012, 3.03, footprint.size.y / 7.0 - 0.025), plank, false, frame)
+			box(Vector3(x,1.55,0),Vector3(width/7-0.025,3.03,0.312),plank,false,frame)
 			for height in [0.4, 2.45]:
-				for side in [-1, 1]: box(Vector3(side * (footprint.size.x * 0.5 + 0.03), height, z), Vector3(0.035, 0.085, 0.085), iron, false, frame)
-		for height in [0.4, 2.45]: box(Vector3(0, height, 0), Vector3(footprint.size.x + 0.035, 0.16, footprint.size.y + 0.02), iron, false, frame)
+				for side in [-1,1]: box(Vector3(x,height,side*0.18),Vector3(0.085,0.085,0.035),iron,false,frame)
+		for height in [0.4,2.45]: box(Vector3(center_x,height,0),Vector3(width+0.02,0.16,0.34),iron,false,frame)
+		for side in [-1,1]:
+			box(Vector3(door.side*(width-0.3),1.32,side*0.195),Vector3(0.07,0.25,0.055),iron,false,frame)
+
+func ct_house() -> void:
+	# Original modern desert residence over a shaded, open CT undercroft.
+	# Upper mass is real cover; all ground supports also exist in Layout.clear.
+	var plaster := stone(Color("d5c7b3"))
+	var lower := stone(Color("adaba0"))
+	var teal := material(Color("486c72"))
+	var trim := material(Color("e1d7c3"))
+	var dark := material(Color("303e43"))
+	var iron := material(Color("475458"),0.35)
+	# The east end crosses the 2.2 m A ramp: retain full standing clearance.
+	var slab := box(Vector3(2,4.95,-32.5),Vector3(20,0.45,9.5),lower,true)
+	slab.name = "CTUndercroftCeiling"
+	var residence := box(Vector3(2,6.7,-32.5),Vector3(19.5,3.1,9.0),plaster,true)
+	residence.name = "CTResidence"
+	for support in Layout.CT_SUPPORTS:
+		var p: Vector2 = support.get_center()
+		var base := Layout.floor_height(p)
+		box(Vector3(p.x,(base+4.95)*0.5,p.y),Vector3(support.size.x,4.95-base,support.size.y),lower,true)
+	box(Vector3(2,8.32,-32.5),Vector3(20,0.22,9.5),trim)
+	box(Vector3(2,8.65,-36.9),Vector3(19.5,0.6,0.18),plaster)
+	for x in [-7.65,11.65]: box(Vector3(x,8.65,-32.5),Vector3(0.18,0.6,9.0),plaster)
+	# Deep window frames and inset shutters give the upper storey readable scale.
+	for x in [-4.8,-0.4,4.0,8.4]:
+		box(Vector3(x,6.75,-27.96),Vector3(1.65,1.85,0.08),dark)
+		for side in [-1,1]:
+			box(Vector3(x+side*0.81,6.75,-27.88),Vector3(0.16,2.1,0.18),trim)
+			box(Vector3(x+side*0.43,6.75,-27.82),Vector3(0.69,1.70,0.13),teal)
+		for n in 6: box(Vector3(x,6.07+n*0.25,-27.73),Vector3(1.38,0.045,0.06),dark)
+		box(Vector3(x,5.75,-27.80),Vector3(1.95,0.16,0.40),trim)
+	# Narrow projecting balcony above the spawn exit; never an invisible wall.
+	box(Vector3(2,5.48,-27.42),Vector3(6.8,0.18,1.1),trim)
+	for x in range(-1,6): box(Vector3(x,6.1,-26.94),Vector3(0.045,1.10,0.045),iron)
+	box(Vector3(2,6.65,-26.94),Vector3(6.8,0.065,0.065),iron)
+	for z in [-35.8,-29.2]:
+		box(Vector3(2,4.68,z),Vector3(19.5,0.16,0.22),trim)
+		var light := OmniLight3D.new()
+		light.position = Vector3(2,4.3,z)
+		light.omni_range = 8.5
+		light.light_color = Color("c6e0e1")
+		light.light_energy = 1.6
+		light.shadow_enabled = false
+		add_child(light)
+		box(Vector3(2,4.60,z),Vector3(1.1,0.07,0.20),material(Color("dce9df")))
+	# Mounted fascia sign, not floating double-sided text across the exit view.
+	box(Vector3(2,4.35,-27.72),Vector3(6.4,0.74,0.10),dark)
+	var label := sign_text("CT  /  UNDERCROFT",Vector3(2,4.35,-27.655),0,Color("d3dfd6"),38)
+	label.name = "CTUndercroftSign"
+	label.double_sided = false

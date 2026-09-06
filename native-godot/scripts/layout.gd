@@ -37,9 +37,16 @@ const COVERS := [
 	Rect2(-3, -16, 2, 3), Rect2(-3, -29, 3, 2),
 ]
 const DOORS := [
-	Rect2(24.20, 15.0, 0.24, 3.0), Rect2(31.56, 15.0, 0.24, 3.0),
-	Rect2(-3.65, -20.5, 0.24, 3.0), Rect2(5.41, -20.5, 0.24, 3.0),
+	# Hinged leaves: x/z footprints, collision and radar use this same geometry.
+	{"hinge":Vector2(24.2,16.5),"width":3.70,"side":1.0,"yaw":-PI/12},
+	{"hinge":Vector2(31.8,16.5),"width":2.85,"side":-1.0,"yaw":PI/7.5},
+	{"hinge":Vector2(-3.8,-21),"width":4.85,"side":1.0,"yaw":-PI/9.5},
+	{"hinge":Vector2(5.8,-21),"width":3.90,"side":-1.0,"yaw":PI/8},
 ]
+# Ground-level supports only. The CT building's occupied upper storey is above
+# the walkable undercroft and must not turn the spawn into a solid nav obstacle.
+const CT_SUPPORTS := [Rect2(-7.9,-35.5,0.6,0.6),Rect2(-7.9,-29,0.6,0.6),
+	Rect2(11.5,-35.5,0.6,0.6),Rect2(11.5,-29,0.6,0.6)]
 
 var nav := AStarGrid2D.new()
 
@@ -78,8 +85,27 @@ static func clear(p: Vector2, radius: float = 0.38) -> bool:
 		if cover.grow(radius).has_point(p):
 			return false
 	for door in DOORS:
-		if door.grow(radius).has_point(p): return false
+		var local := (p - Vector2(door.hinge)).rotated(float(door.yaw))
+		if door_rect(door).grow(radius).has_point(local): return false
+	for support in CT_SUPPORTS:
+		if support.grow(radius).has_point(p): return false
 	return true
+
+static func door_rect(door: Dictionary) -> Rect2:
+	return Rect2(minf(0,door.side*door.width),-0.15,door.width,0.30)
+
+static func door_corners(door: Dictionary) -> PackedVector2Array:
+	var rect := door_rect(door)
+	var points := PackedVector2Array()
+	for corner in [rect.position,Vector2(rect.end.x,rect.position.y),rect.end,Vector2(rect.position.x,rect.end.y)]:
+		points.append(Vector2(door.hinge)+corner.rotated(-float(door.yaw)))
+	return points
+
+static func door_floor(door: Dictionary) -> float:
+	# Fit the lowest part of the rotated leaf, not just its uphill hinge.
+	var base := floor_height(door.hinge)
+	for corner in door_corners(door): base = minf(base,floor_height(corner))
+	return base
 
 func cell(p: Vector3) -> Vector2i:
 	return Vector2i(floori(p.x), floori(p.z))
