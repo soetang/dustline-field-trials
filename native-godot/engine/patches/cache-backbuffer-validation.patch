@@ -1,0 +1,29 @@
+--- a/drivers/gles3/storage/render_scene_buffers_gles3.cpp
++++ b/drivers/gles3/storage/render_scene_buffers_gles3.cpp
+@@ -463,6 +463,11 @@
+ void RenderSceneBuffersGLES3::check_backbuffer(bool p_need_color, bool p_need_depth) {
+ 	GLES3::TextureStorage *texture_storage = GLES3::TextureStorage::get_singleton();
+ 
++	// Storage is immutable between allocations. Recheck only when the framebuffer
++	// or an attachment is created; configure() clears all IDs on reconfiguration.
++	const bool needs_check = backbuffer3d.fbo == 0 ||
++			(p_need_color && backbuffer3d.color == 0) ||
++			(p_need_depth && backbuffer3d.depth == 0);
+ 	// Setup our back buffer
+ 
+ 	if (backbuffer3d.fbo == 0) {
+@@ -535,8 +540,10 @@
+-	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+-	if (status != GL_FRAMEBUFFER_COMPLETE) {
+-		_clear_back_buffers();
+-		WARN_PRINT("Could not create 3D back buffers, status: " + texture_storage->get_framebuffer_error(status));
++	if (needs_check) {
++		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
++		if (status != GL_FRAMEBUFFER_COMPLETE) {
++			_clear_back_buffers();
++			WARN_PRINT("Could not create 3D back buffers, status: " + texture_storage->get_framebuffer_error(status));
++		}
+ 	}
+ 
+ 	glBindTexture(texture_target, 0);
+ 	glBindFramebuffer(GL_FRAMEBUFFER, GLES3::TextureStorage::system_fbo);

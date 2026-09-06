@@ -2,6 +2,9 @@ class_name FieldWorld
 extends Node3D
 
 const Layout = preload("res://scripts/layout.gd")
+const BATCH_CELL_SIZE := 8.0
+# Experimental until repeated same-quality timings show a net benefit.
+const CONSOLIDATE_STANDARD_COLORS := false
 const PLASTER = preload("res://shaders/plaster.gdshader")
 const SURFACE = preload("res://shaders/surface.gdshader")
 const WALL_DIFF = preload("res://assets/textures/concrete_wall_001_diff_1k.jpg")
@@ -104,40 +107,86 @@ func _ready() -> void:
 	site("B", Layout.SITE_B, Color("db7a39"))
 	batch_static_boxes()
 
-func batch_static_boxes() -> void:
-	# Box details share a unit cube, but are split by material and 8 m region.
-	# This keeps culling local instead of drawing the entire map as one batch.
-	# Only startup visuals are collected: collision bodies and later effects stay
-	# independent, and transforms are read after arch/door rotations are complete.
+func batch_material(mat: Material, cache: Dictionary, variants: Array[Dictionary]) -> Dictionary:
+	if cache.has(mat): return cache[mat]
+	var result := {"material": mat, "color": Color.WHITE, "use_colors": false}
+	# Keep custom shaders, transparent sorting, existing vertex-color semantics
+	# and extra passes untouched. Our opaque scenery materials need only a tint.
+	if mat is StandardMaterial3D and mat.get_script() == null and mat.next_pass == null \
+			and mat.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED \
+			and not mat.vertex_color_use_as_albedo and mat.albedo_color.a == 1.0:
+		var state: Dictionary = {}
+		for property in mat.get_property_list():
+			if property.usage & PROPERTY_USAGE_STORAGE and property.name != "albedo_color":
+				state[property.name] = mat.get(property.name)
+		var shared: StandardMaterial3D
+		for variant in variants:
+			if variant.state == state:
+				shared = variant.material
+				break
+		if shared == null:
+			shared = mat.duplicate()
+			shared.albedo_color = Color.WHITE
+			shared.vertex_color_use_as_albedo = true
+			# Match source_color albedo uniforms: sRGB in Compatibility, converted
+			# to linear by StandardMaterial's vertex shader in Forward+/Mobile.
+			shared.vertex_color_is_srgb = true
+			variants.append({"state": state, "material": shared})
+		result = {"material": shared, "color": mat.albedo_color, "use_colors": true}
+	cache[mat] = result
+	return result
+
+func static_box_groups(consolidate_colors: bool = true) -> Dictionary:
 	var groups: Dictionary = {}
-	var unit := BoxMesh.new()
-	unit.size = Vector3.ONE
-	var count := 0
-	var bodies_before := find_children("*", "StaticBody3D", true, false).size()
+	var cache: Dictionary = {}
+	var variants: Array[Dictionary] = []
 	for instance in find_children("*", "MeshInstance3D", true, false):
 		if not instance.mesh is BoxMesh or instance.mesh.size.length() > 32: continue
 		var transform := box_transform(instance)
 		var mat: Material = instance.material_override
-		var key := "%d/%d/%d/%d" % [mat.get_instance_id() if mat else 0, floori(transform.origin.x / 8), floori(transform.origin.z / 8), instance.cast_shadow]
-		if not groups.has(key): groups[key] = {"material": mat, "transforms": [], "shadow": instance.cast_shadow}
+		var info := batch_material(mat, cache, variants) if consolidate_colors else {"material": mat, "color": Color.WHITE, "use_colors": false}
+		mat = info.material
+		var key := "%d/%d/%d/%d" % [mat.get_instance_id() if mat else 0, floori(transform.origin.x / BATCH_CELL_SIZE), floori(transform.origin.z / BATCH_CELL_SIZE), instance.cast_shadow]
+		if not groups.has(key):
+			groups[key] = {"material": mat, "transforms": [], "colors": [], "sources": [], "shadow": instance.cast_shadow, "use_colors": info.use_colors}
 		groups[key].transforms.append(transform)
-		count += 1
-		instance.get_parent().remove_child(instance)
-		instance.queue_free()
+		groups[key].colors.append(info.color)
+		groups[key].sources.append(instance)
+	return groups
+
+func batch_static_boxes(consolidate_colors: bool = CONSOLIDATE_STANDARD_COLORS) -> void:
+	# Share opaque material state and put color in each instance. Spatial cells
+	# and shadow modes stay independent; custom materials keep their identities.
+	# The diagnostic flag allows a same-build rendered comparison with old batches.
+	var enabled := (consolidate_colors or "--color-batching" in OS.get_cmdline_user_args()) and "--no-color-batching" not in OS.get_cmdline_user_args()
+	var groups := static_box_groups(enabled)
+	var unit := BoxMesh.new()
+	unit.size = Vector3.ONE
+	var count := 0
+	var color_batches := 0
+	var bodies_before := find_children("*", "StaticBody3D", true, false).size()
 	for key in groups:
 		var group: Dictionary = groups[key]
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.use_colors = group.use_colors
 		multi.mesh = unit
 		multi.instance_count = group.transforms.size()
-		for i in group.transforms.size(): multi.set_instance_transform(i, group.transforms[i])
+		for i in group.transforms.size():
+			multi.set_instance_transform(i, group.transforms[i])
+			if group.use_colors: multi.set_instance_color(i, group.colors[i])
 		var instance := MultiMeshInstance3D.new()
 		instance.multimesh = multi
 		instance.material_override = group.material
 		instance.cast_shadow = group.shadow
 		add_child(instance)
+		count += group.sources.size()
+		if group.use_colors: color_batches += 1
+		for source in group.sources:
+			source.get_parent().remove_child(source)
+			source.queue_free()
 	prune_empty(self)
-	batching = {"source_boxes": count, "batches": groups.size(), "bodies_before": bodies_before,
+	batching = {"source_boxes": count, "batches": groups.size(), "color_batches": color_batches, "cell_size": BATCH_CELL_SIZE, "bodies_before": bodies_before,
 		"bodies_after": find_children("*", "StaticBody3D", true, false).size()}
 
 func box_transform(instance: MeshInstance3D) -> Transform3D:
@@ -174,7 +223,10 @@ func lighting() -> void:
 	environment.fog_light_color = Color("c4b493")
 	environment.fog_density = 0.0016
 	environment.fog_sky_affect = 0.15
-	environment.ssao_enabled = true # Forward+ enhancement; Compatibility skips it.
+	# Compatibility gained SSAO in Godot 4.6: this is an expensive real
+	# full-screen pass in our WebGL build, not a skipped desktop-only setting.
+	# High is the default; lower-cost presets are explicit user choices.
+	environment.ssao_enabled = true
 	environment.ssao_radius = 1.3
 	environment_node.environment = environment
 	add_child(environment_node)

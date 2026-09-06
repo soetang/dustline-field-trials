@@ -11,7 +11,9 @@ const Objective = preload("res://scripts/objective.gd")
 const Combat = preload("res://scripts/combat.gd")
 const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
-const BUILD := "courtyard-0.4.2-encounters"
+const FrameMetrics = preload("res://scripts/frame_metrics.gd")
+const RenderBudget = preload("res://scripts/render_budget.gd")
+const BUILD := "courtyard-0.4.3-frame-budget"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -52,6 +54,8 @@ var effects: Array[Node3D] = []
 var rng := RandomNumberGenerator.new()
 var diagnostics := false
 var silent_test := false
+var frame_metrics := FrameMetrics.new()
+var render_budget := RenderBudget.new()
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -61,6 +65,13 @@ func _ready() -> void:
 	configure_input()
 	world = World.new()
 	add_child(world)
+	# Preserve the original effects/resolution. Lower tiers are opt-in, not
+	# counted as computation optimizations or selected behind the player's back.
+	render_budget.level = 2
+	render_budget.apply(self)
+	get_viewport().size_changed.connect(func():
+		render_budget.apply(self)
+		frame_metrics = FrameMetrics.new())
 	sound = Sound.new()
 	sound.game = self
 	add_child(sound)
@@ -220,6 +231,15 @@ func restart_match() -> void:
 	new_round()
 	set_paused(false)
 
+func _process(_dt: float) -> void:
+	frame_metrics.record(Time.get_ticks_usec(), not paused and not buy_open and phase == "LIVE")
+
+func cycle_quality() -> void:
+	render_budget.level = (render_budget.level + 1) % RenderBudget.NAMES.size()
+	render_budget.apply(self)
+	frame_metrics = FrameMetrics.new()
+	hud.sync_menu()
+
 func _physics_process(dt: float) -> void:
 	if paused: return
 	elapsed += dt
@@ -368,7 +388,7 @@ func notify(message: String, seconds: float = 2.5) -> void:
 	banner_left = seconds
 
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "recent_live_frames": frame_metrics.cached, "render": render_budget.details(get_viewport()), "scene_nodes": get_tree().get_node_count(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return

@@ -6,14 +6,17 @@ const {execFileSync,spawn}=require('node:child_process');
 const powershell='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 const quote=s=>`'${s.replaceAll("'","''")}'`;
 const ps=script=>execFileSync(powershell,['-NoProfile','-NonInteractive','-Command',script],{encoding:'utf8',timeout:15000}).trim();
-module.exports=async chromium=>{
+module.exports=async (chromium,{highPerformanceGPU=false}={})=>{
   const locations=JSON.parse(ps('[pscustomobject]@{temp=$env:TEMP;chrome="${env:ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe"}|ConvertTo-Json -Compress'));
   const localTemp=execFileSync('wslpath',['-u',locations.temp],{encoding:'utf8'}).trim();
   const profile=fs.mkdtempSync(path.join(localTemp,'dustline-browser-'));
   const windowsProfile=execFileSync('wslpath',['-w',profile],{encoding:'utf8'}).trim();
   // Match Playwright's foreground-test behavior for an otherwise headless,
   // native browser; Chrome must not throttle this window as an occluded app.
-  const pid=Number(ps(`(Start-Process -FilePath ${quote(locations.chrome)} -ArgumentList @('--headless=new','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-extensions','--disable-component-update','--remote-debugging-port=0',${quote(`--user-data-dir="${windowsProfile}"`)},'about:blank') -PassThru).Id`));
+  // Applies only to this temporary profile/process; no Windows GPU preference
+  // or user's Chrome flags are changed. Check the actual backend in results.
+  const gpuFlag=highPerformanceGPU ? "'--force-high-performance-gpu'," : '';
+  const pid=Number(ps(`(Start-Process -FilePath ${quote(locations.chrome)} -ArgumentList @('--headless=new','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-extensions','--disable-component-update',${gpuFlag}'--remote-debugging-port=0',${quote(`--user-data-dir="${windowsProfile}"`)},'about:blank') -PassThru).Id`));
   if(!Number.isInteger(pid)||pid<=0)throw new Error('Windows Chrome did not return a process ID');
   let browser,relay;const bridges=new Set(),sockets=new Set();let closed=false;
   const cleanup=async()=>{

@@ -9,6 +9,12 @@ func _ready() -> void:
 		set_process(false)
 		return
 	JavaScriptBridge.eval("""
+		(() => {
+			const canvas=document.getElementById('canvas');
+			const gl=canvas?.getContext('webgl2');
+			const ext=gl?.getExtension('WEBGL_debug_renderer_info');
+			window.courtyardGraphicsBackend=ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'not exposed by browser';
+		})();
 		window.courtyardPauseRequested = false;
 		window.courtyardWantsPointerLock = false;
 		(() => {
@@ -31,7 +37,7 @@ func _process(dt: float) -> void:
 		JavaScriptBridge.eval("window.courtyardPauseRequested = false", true)
 		game.set_paused(true)
 	# Read-only, local diagnostic state. No remote uploads or gameplay commands.
-	JavaScriptBridge.eval("window.courtyardState = " + game.details(), true)
+	JavaScriptBridge.eval("window.courtyardState = Object.assign(" + game.details() + ", {graphics_backend:window.courtyardGraphicsBackend, device_pixel_ratio:window.devicePixelRatio})", true)
 
 func expect_capture(value: bool) -> void:
 	if OS.has_feature("web"):
@@ -40,7 +46,7 @@ func expect_capture(value: bool) -> void:
 
 func feedback() -> void:
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.courtyardFeedback && window.courtyardFeedback(" + JSON.stringify(game.details()) + ")", true)
+		JavaScriptBridge.eval("window.courtyardFeedback && window.courtyardFeedback(JSON.stringify(Object.assign(" + game.details() + ", {graphics_backend:window.courtyardGraphicsBackend, device_pixel_ratio:window.devicePixelRatio}),null,2))", true)
 	else:
 		DisplayServer.clipboard_set(game.details())
 		game.notify("TEST DETAILS COPIED")

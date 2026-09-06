@@ -75,6 +75,7 @@ func sync_menu() -> void:
 			game.sound.play("start")
 			sync_menu())
 		button("Fullscreen / Windowed  ·  F11", game.toggle_fullscreen)
+		button("Graphics: %s  /  change" % game.RenderBudget.NAMES[game.render_budget.level], game.cycle_quality)
 		button("Copy feedback details", func(): game.browser.feedback())
 		if OS.has_feature("web"):
 			button("Download screenshot / F8", game.screenshot)
@@ -154,7 +155,10 @@ func _draw() -> void:
 		centered("FIELD REPORT", size.y * 0.5 - 58, accent, 27)
 		centered("YOU   %d kills   /   %d deaths" % [game.kills, game.deaths], size.y * 0.5 - 13)
 		centered("FIRST TO 5 ROUNDS  /  DEFENDERS", size.y * 0.5 + 33, blue, 17)
-	if game.diagnostics: text("%s   %d FPS   %s" % [game.BUILD, Engine.get_frames_per_second(), RenderingServer.get_current_rendering_method()], Vector2(24, size.y - 9), accent, 14)
+	if game.diagnostics:
+		text("%s   %d FPS   p95 %.1f ms   %d draws   %s" % [game.BUILD, Engine.get_frames_per_second(),
+			game.frame_metrics.cached.get("p95_ms",0), Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			game.RenderBudget.NAMES[game.render_budget.level]], Vector2(24, size.y - 9), accent, 14)
 	if game.paused: draw_rect(Rect2(Vector2.ZERO, size), Color(0.015, 0.025, 0.03, 0.5))
 
 func damage_cues() -> void:

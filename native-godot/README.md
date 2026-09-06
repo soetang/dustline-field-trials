@@ -20,6 +20,23 @@ the [original browser game](https://soetang.github.io/dustline-field-trials/)
 continues to support touch controls. Native Forward+ graphics remain available;
 the web build uses Godot's lighter Compatibility renderer.
 
+Development candidate **0.4.3** adds profiling and computational optimizations
+(the public preview remains 0.4.1 until deployment). **High remains
+the default** on desktop and web, preserving full resolution, four sun-shadow
+cascades and ambient occlusion. Escape → Graphics offers explicit lower-cost
+Balanced/Performance choices; those visual tradeoffs are not counted as
+same-quality computational improvements or selected automatically.
+Experimental material consolidation is disabled by default pending repeatable
+whole-frame gains; original geometry, collision and batching defaults remain.
+Cached operator math reduces repeated terrain samples without reducing animation
+cadence. The previous 0.4.2 opening-headshot fix is included.
+
+**F3** shows FPS, p95 frame time and draw calls. Escape → Copy feedback details
+includes recent live p50/p95/p99 frame times, stalls, actual render resolution,
+graphics backend (when exposed), and scene-node count. Menu/buy time is excluded;
+changing graphics or resizing resets the bounded 1,800-frame history. No upload.
+See [profiling results, limitations and reproduction steps](docs/performance.md).
+
 Browser 0.3.1 makes normal bot aim stance-aware and body-focused. Crouching no
 longer leaves their aim fixed at standing height. Bots need sustained visible
 contact before occasional precision bursts at a slow, exposed target; moving
@@ -112,6 +129,9 @@ X11/Wayland display, so tests cannot trap your mouse. Its FPS is not a hardware
 benchmark. Windows headless Chrome can still confine the host cursor; that
 runner is blocked unless a tester explicitly sets both
 `DUSTLINE_WINDOWS_BROWSER=1` and `DUSTLINE_ALLOW_HOST_INPUT=1`.
+The separate `--windows-render-only` benchmark is headless, denies pointer lock
+and fullscreen before engine startup, and rejects keyboard/mouse/touch commands.
+It can measure hardware without opening a window or taking the desktop cursor.
 
 In the browser, **F8 downloads a PNG**. **Escape → Copy feedback details** opens
 a selectable/copyable text panel; no clipboard permission is required just to

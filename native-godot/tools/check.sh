@@ -23,6 +23,9 @@ grep -Eq '^AIM: [0-9]+/[0-9]+ passed' "$log_dir/aim.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/encounters.gd -- --test 2>&1 | tee "$log_dir/encounters.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/encounters.log"; then exit 1; fi
 grep -Eq '^ENCOUNTERS: [0-9]+/[0-9]+ passed' "$log_dir/encounters.log"
+"$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/query_reuse.gd -- --test 2>&1 | tee "$log_dir/query-reuse.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/query-reuse.log"; then exit 1; fi
+grep -Eq '^QUERY_REUSE: [0-9]+/[0-9]+ passed' "$log_dir/query-reuse.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/operators.gd -- --test 2>&1 | tee "$log_dir/operators.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/operators.log"; then exit 1; fi
 grep -Eq '^OPERATORS: [0-9]+/[0-9]+ passed' "$log_dir/operators.log"
@@ -32,6 +35,9 @@ grep -Eq '^FEET: [0-9]+/[0-9]+ passed' "$log_dir/feet.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/map_update.gd -- --test 2>&1 | tee "$log_dir/map.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/map.log"; then exit 1; fi
 grep -Eq '^MAP_UPDATE: [0-9]+/[0-9]+ passed' "$log_dir/map.log"
+"$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/material_batches.gd -- --test 2>&1 | tee "$log_dir/material-batches.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/material-batches.log"; then exit 1; fi
+grep -Eq '^MATERIAL_BATCHES: [0-9]+/[0-9]+ passed' "$log_dir/material-batches.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/input.gd -- --test 2>&1 | tee "$log_dir/input.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/input.log"; then exit 1; fi
 grep -Eq '^INPUT: [0-9]+/[0-9]+ passed' "$log_dir/input.log"
@@ -44,4 +50,7 @@ grep -Eq '^AUDIO: [0-9]+/[0-9]+ passed' "$log_dir/audio.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/rounds.gd -- --test 2>&1 | tee "$log_dir/rounds.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/rounds.log"; then exit 1; fi
 grep -Eq '^SEEDED_ROUNDS: [0-9]+/[0-9]+ passed' "$log_dir/rounds.log"
+"$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/performance.gd -- --test 2>&1 | tee "$log_dir/performance.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/performance.log"; then exit 1; fi
+grep -Eq '^PERFORMANCE: [0-9]+/[0-9]+ passed' "$log_dir/performance.log"
 echo "Logs: $log_dir"

@@ -38,7 +38,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const artifacts = fs.mkdtempSync(path.resolve(project, '../artifacts/courtyard-browser-'));
   let browser, page;
   const logs = [], failures = [];
-  const watchdog = setTimeout(() => { console.error('Courtyard browser check timed out'); browser?.close(); }, 240000);
+  // Full-quality software rendering can advance the seven-second buy phase
+  // much slower than wall time. Bound the run without changing game dt/effects.
+  const watchdog = setTimeout(() => { console.error('Courtyard browser check timed out'); browser?.close(); }, 480000);
   watchdog.unref();
   try {
     browser = await launchBrowser(chromium);
@@ -53,7 +55,20 @@ const { launchBrowser } = require('../../scripts/browser-options');
       const downloadPath = execFileSync('wslpath',['-w',artifacts],{encoding:'utf8'}).trim();
       await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath,browserContextId:targetInfo.browserContextId});
     }
-    page.setDefaultTimeout(30000);
+    page.setDefaultTimeout(60000);
+    const captureSession = await page.context().newCDPSession(page);
+    async function capture(filename) {
+      // This is an engine-rendered canvas, not a DOM font/layout test.
+      // Capture the compositor surface directly: Playwright's extra font/RAF
+      // wait can time out under SwiftShader even after controls have passed.
+      const {data} = await captureSession.send('Page.captureScreenshot',{
+        format:'png',fromSurface:true,captureBeyondViewport:false,
+        clip:{x:0,y:0,width:1280,height:720,scale:Number(process.env.TEST_DPR || 1)},
+      });
+      const png=Buffer.from(data,'base64');
+      assert.equal(png.readUInt32BE(0),0x89504e47);
+      fs.writeFileSync(path.join(artifacts,filename),png);
+    }
     await page.addInitScript(() => {
       // Read the actual engine's committed linear-memory capacity. This is
       // not process RAM (it excludes JS/browser/GPU allocations); never report
@@ -142,9 +157,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
     assert.equal(state.paused, true);
     assert.equal(state.phase, 'BUY');
     assert.equal(await page.evaluate(() => crossOriginIsolated), false);
-    await page.screenshot({path:path.join(artifacts,'menu.png')});
-    // Fixed 1280×720 CSS viewport: click the real Godot Deploy button.
-    await page.mouse.click(640,328);
+    await capture('menu.png');
+    // Normal deploy key, independent of menu height/graphics options.
+    await page.keyboard.press('Enter');
     await page.waitForFunction(() => !window.courtyardState.paused && document.pointerLockElement?.id === 'canvas');
     const frozen = await get();
     await page.keyboard.down('KeyW');
@@ -160,7 +175,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     assert.equal((await get()).paused, false, 'Opening armory must not pause');
     await page.keyboard.press('KeyB');
     await page.waitForFunction(() => !window.courtyardState.buy_open && document.pointerLockElement?.id === 'canvas');
-    await page.waitForFunction(() => window.courtyardState.phase === 'LIVE', null, {timeout:60000});
+    await page.waitForFunction(() => window.courtyardState.phase === 'LIVE', null, {timeout:120000});
     state = await get();
     await page.keyboard.down('KeyW');
     await page.waitForFunction(p => Math.hypot(window.courtyardState.position_xyz[0]-p[0], window.courtyardState.position_xyz[2]-p[2]) > .8, state.position_xyz);
@@ -180,7 +195,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const audio = await page.evaluate(() => window.courtyardAudioProbe.map(p => ({state:p.context.state, peak:p.peak, error:p.error})));
     assert.ok(audio.some(p => p.state === 'running' && p.peak > .001), `No real browser audio signal: ${JSON.stringify(audio)}`);
     console.log('Reload and audible engine output passed:', audio);
-    await page.screenshot({path:path.join(artifacts,'gameplay.png')});
+    await capture('gameplay.png');
     const downloadPromise = page.waitForEvent('download');
     await page.keyboard.press('F8');
     const download = await downloadPromise;
@@ -201,11 +216,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
     state = await get();
     assert.equal(state.elapsed, paused.elapsed);
     assert.deepEqual(state.position_xyz, paused.position_xyz);
-    await page.mouse.click(640,485);
+    await page.mouse.click(640,510);
     await page.locator('#feedback').waitFor({state:'visible'});
     const feedback = JSON.parse(await page.locator('#feedback-text').inputValue());
     assert.equal(feedback.build, state.build);
     assert.equal(feedback.paused, true);
+    assert.equal(feedback.render.quality, 'High');
+    assert.equal(feedback.render.ssao, true);
+    assert.ok(feedback.recent_live_frames.samples > 0 && feedback.recent_live_frames.samples <= 1800);
+    assert.ok(feedback.recent_live_frames.p95_ms > 0);
+    assert.equal(typeof feedback.graphics_backend, 'string');
     await page.locator('#close-feedback').click();
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => !window.courtyardState.paused && document.pointerLockElement?.id === 'canvas');
