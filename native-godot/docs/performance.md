@@ -135,6 +135,56 @@ This removes redundant computation before considering a compiled port. The
 remaining navigation cost is much smaller; a C++/Rust kernel should now be
 judged against this optimized baseline, not the avoidably expensive old loop.
 
+## 0.4.5 live feedback and remaining presentation waits
+
+Two manual High 1920×882 feedback windows on AMD integrated graphics measured
+28.51 / 28.48 mean FPS, p95 42.2 / 44.2 ms, and p99 48.4 / 72.8 ms over
+53.5 / 63.2 seconds. Both included occasional >100 ms stalls. They are different
+routes/views, not a controlled local-vs-Pages comparison or a long-run guarantee.
+They support improved smoothness but do not meet the 60 FPS target.
+
+A fresh four-window warmed browser CPU profile at that resolution kept the
+engine compiler paused and used the normal AI fixture. In the later windows,
+about 47% of sampled time was in `getParameter`, specifically Emscripten's
+`blitOffscreenFramebuffer` during frame presentation, and about 19–20% in
+`checkFramebufferStatus`. The path-check probe measured about 0.88 ms per
+physics tick. These synchronous browser APIs can include GPU/driver waits;
+their profile share is not a promise of equivalent removable computation.
+Local evidence: `artifacts/map-review-browser-5KQv8t/`, with separate warmed
+`.cpuprofile` files; startup and capture/summary work are outside the handshake.
+
+The [test-only presentation cache](../engine/experiments/presentation-state-cache.js)
+tracks scissor enable and draw-framebuffer binding through owned-context calls.
+All unrelated queries, rendering, textures and GL errors stay native. It starts
+disabled and is **not loaded by the public game**. A fast fake-WebGL state model
+passes 2,857 checks, including numeric coercion, invalid/deleted/foreign handles,
+borrowed receivers, pre-event context loss and restoration. Direct native-prototype
+calls bypassing the wrappers require explicit invalidation; this is not a general
+drop-in cache for arbitrary third-party WebGL clients.
+
+The initial native → cache → cache → native trial passed real-context state
+validation in all four windows. Native getters fell from roughly two per frame
+to zero in cached windows, but framebuffer-check sampled time rose from ~21%
+to ~50–52%: much of the wait moved rather than vanished. Mean FPS was
+15.32 / 17.76 / 16.93 / 15.86; p99 remained about 145–153 ms. The lower absolute
+rates differ substantially from the earlier profile, and host load was not
+controlled. More importantly, screenshot review exposed another confound: the
+idle player's death-camera height depends on simulation progress at the end of
+each timed window. Those pictures are not identical-view comparisons.
+**This trial does not justify shipping the cache or claiming a reliable speedup.**
+Local artifacts: `artifacts/map-review-browser-AlnvCR/`.
+
+The fixture now pins a separate observer camera before rendering, retaining
+normal actor, death and spectator callbacks. It records the pose and asserts
+that all windows have identical camera metadata. Historical captures above
+predate this correction; navigation's differential geometry/per-call evidence
+still stands, but future whole-frame comparisons should use the fixed view.
+
+```sh
+node native-godot/tests/presentation-state-cache-check.js
+node native-godot/tests/map-review-browser.js --gameplay-profile --presentation-abba --profile-steady --windows-render-only --duration=12 --width=1920 --height=882 --capture
+```
+
 ## Isolated ambient-occlusion diagnostic (not a same-quality fix)
 
 Godot 4.7.2 Compatibility **does run SSAO**. An old source comment incorrectly
@@ -263,10 +313,18 @@ do not mistake loading/PNG-encoding work for steady gameplay cost. Release Wasm
 symbols may limit attribution. The renderer's CPU timer includes driver waits;
 zero GPU time means unavailable in this WebGL build, **not a free GPU**.
 
-Prefer `--profile-steady` (without `--profile`) to save one named `.cpuprofile`
+Prefer `--profile-steady` (without `--profile`) with `--benchmark` or
+`--gameplay-profile` to save one named `.cpuprofile`
 per measured segment. A handshake starts sampling after warmup and stops it before
 JSON/PNG work. It still includes a small boundary wait around the timed section;
 use `samples_ms` for frame-time statistics, not total CPU-profile duration.
+
+An optional `Courtyard visual review (no deployment)` GitHub workflow renders
+on the remote runner, not the development machine. Dispatch with `scene=map`
+for five views, `scene=walls` for twelve wall checks, or `scene=cpu` for a short
+fixed-camera profiling-fixture check. Download that run's screenshot/JSON/log
+artifact. Its software renderer is for correctness and visual review, never
+hardware performance claims. It has no Pages write/deployment permission.
 
 Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` changes
 only the temporary benchmark project. Test resources, profiles and documentation

@@ -1,5 +1,6 @@
 'use strict';
-// Staged architecture review in the release WebGL engine, NOT gameplay/FPS.
+// Isolated architecture/render reviews and instrumented AI gameplay fixtures.
+// Software rendering checks correctness, not hardware FPS.
 // The official template ignores --script. Export a separate, temporary review
 // entry point instead; never add test commands or resources to the public pack.
 const assert = require('node:assert/strict');
@@ -17,13 +18,15 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const wallReview = process.argv.includes('--wall-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
+  const presentationAbba = process.argv.includes('--presentation-abba');
   assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
+  assert.ok(!presentationAbba || (gameplayProfile && !navigationAbba),'Presentation ABBA requires --gameplay-profile without --navigation-abba');
   assert.ok([benchmark,wallReview,gameplayProfile].filter(Boolean).length <= 1,'Choose one review/profile mode');
   const longFixture = benchmark || wallReview || gameplayProfile;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
-  assert.ok(!steadyProfile || (benchmark && !process.argv.includes('--profile')),
-    'Use --profile-steady only with --benchmark and without --profile');
+  assert.ok(!steadyProfile || ((benchmark || gameplayProfile) && !process.argv.includes('--profile')),
+    'Use --profile-steady with --benchmark or --gameplay-profile and without --profile');
   assert.ok(!windowsRenderOnly || longFixture,'Windows renderer is only allowed for no-host-input fixtures');
   assert.ok(!gameplayProfile || !process.argv.some(arg=>/^--(compare|compare-ssao|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching)/.test(arg)),
     'Gameplay profile preserves default High graphics');
@@ -115,6 +118,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (process.argv.includes('--color-batching')) args.push('--color-batching');
   if (steadyProfile) args.push('--profile-steady');
   if (navigationAbba) args.push('--navigation-abba');
+  if (presentationAbba) args.push('--presentation-abba');
   for (const arg of process.argv.slice(2))
     if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
@@ -146,6 +150,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+    if (presentationAbba) await page.addInitScript({path:path.join(project,'engine/experiments/presentation-state-cache.js')});
     if (windowsRenderOnly) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
@@ -187,7 +192,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
         const {profile}=await profiler.send('Profiler.stop');
         fs.writeFileSync(path.join(artifacts,`${name}.cpuprofile`),JSON.stringify(profile));
         await page.evaluate(() => { window.renderProfilePhase='stopped'; });
-        console.log('Warmed render CPU profile saved:',name);
+        console.log('Warmed CPU profile saved:',name);
       }
       profiler=null;
     }
@@ -204,7 +209,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
     const expectedWalls=['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
       'door-near','door-far','player-reported'];
-    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? (navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after'] : ['control-before','profile-before','profile-after','control-after']) : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    const expectedGameplay = presentationAbba ? ['native-before','cache-before','cache-after','native-after']
+      : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
+      : ['control-before','profile-before','profile-after','control-after'];
+    assert.deepEqual(captures.map(c => c.name),gameplayProfile ? expectedGameplay : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    if (gameplayProfile) for (const capture of captures) assert.deepEqual(capture.camera,captures[0].camera,'All windows use an identical observer camera');
     for (const capture of captures) {
       assert.match(capture.name,/^[a-z-]+$/);
       if (wallReview) {
@@ -217,6 +226,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       if (gameplayProfile) {
         assert.equal(capture.dropped_frames,0,'Profile window did not overflow');
         assert.equal(capture.frames,capture.samples_ms.length);
+        assert.equal(capture.camera.mismatched_frames,0,'Observer was current for every measured frame');
         assert.equal(capture.render.quality,'High');
         assert.equal(capture.render.scale_3d,1);
         assert.equal(capture.render.ssao,true);
@@ -224,6 +234,15 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.deepEqual(capture.scopes.map(row=>row.scope),instrumentation.labels);
         assert.equal(capture.instrumented,navigationAbba || capture.name.startsWith('profile-'));
         if (navigationAbba) assert.equal(capture.navigation,capture.name.startsWith('reference-') ? 'original exact predicate' : 'production clearance');
+        if (presentationAbba) {
+          assert.equal(capture.presentation_cache.length,1,'One owned WebGL2 canvas context');
+          const state=capture.presentation_cache[0];
+          assert.equal(state.enabled,capture.name.startsWith('cache-'));
+          assert.equal(state.validation.lost,false,'No graphics context loss');
+          assert.equal(state.validation.scissor,true,'Cached scissor agrees with native query');
+          assert.equal(state.validation.draw,true,'Cached drawing framebuffer agrees with native query');
+          assert.ok(state.enabled ? state.hits > 0 : state.hits === 0,'Selected presentation route exercised');
+        }
         assert.ok(capture.instrumented ? capture.instrumented_self_ms > 0 : capture.instrumented_self_ms === 0);
         for (const row of capture.scopes) {
           assert.ok(row.inclusive_ms >= row.self_ms && row.self_ms >= 0);

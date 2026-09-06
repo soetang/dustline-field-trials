@@ -1,0 +1,55 @@
+name: Courtyard visual review (no deployment)
+on:
+  workflow_dispatch:
+    inputs:
+      scene:
+        description: 'Map/wall screenshots or CPU-fixture check; not hardware FPS'
+        type: choice
+        default: map
+        options: [map, walls, cpu]
+permissions:
+  contents: read
+concurrency:
+  group: courtyard-visual-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .tools/godot/4.7.2
+          key: godot-web-4.7.2-sha512
+      - name: Prepare the verified official engine and isolated release
+        run: |
+          bash native-godot/tools/setup.sh --web
+          bash native-godot/tools/build-web.sh
+          npx playwright install --with-deps chromium
+      - name: Capture staged High-quality WebGL views on the runner
+        env:
+          REVIEW_SCENE: ${{ inputs.scene }}
+        run: |
+          case "$REVIEW_SCENE" in
+            map) node native-godot/tests/map-review-browser.js ;;
+            walls) node native-godot/tests/map-review-browser.js --wall-review ;;
+            cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --width=640 --height=360 ;;
+            *) exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: courtyard-visual-review-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/map-review-browser-*/*.png
+            artifacts/map-review-browser-*/*.json
+            artifacts/map-review-browser-*/*.cpuprofile
+            artifacts/map-review-browser-*/*.log
+            artifacts/godot-web-*/*.log

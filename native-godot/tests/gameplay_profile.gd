@@ -6,14 +6,23 @@ extends SceneTree
 const Probe = preload("res://tests/cpu_profile.gd")
 const LABELS: Array[String] = [] # Injected by the temporary-project runner.
 var game: Node3D
+var observer := Camera3D.new()
 var duration := 12.0
 var resolution := Vector2i(1280, 720)
 
 func _initialize() -> void:
 	call_deferred("run")
 
+func pin_observer() -> void:
+	# Normal death/spectator logic can change the current camera. Keep rendering
+	# from one observer pose so that different frame counts cannot change the
+	# pixel workload merely by reaching a different part of the death animation.
+	if not observer.current: observer.make_current()
+
 func run_segment(name: String, recording: bool, reference_navigation: bool = false) -> void:
 	game.paused = true
+	if "--presentation-abba" in OS.get_cmdline_user_args():
+		JavaScriptBridge.eval("window.presentationStateCache.setEnabled(" + str(name.begins_with("cache-")).to_lower() + ")", true)
 	Probe.reference_navigation = reference_navigation
 	game.elapsed = 0
 	game.round_number = 0
@@ -21,12 +30,18 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	game.new_round()
 	game.phase = "LIVE"
 	game.phase_left = 100
-	game.player.camera.current = true
+	pin_observer()
 	# Sync new CharacterBodies and settle the existing render materials while
 	# paused. This setup/import/round-allocation work is outside the measurement.
 	for frame in 30: await RenderingServer.frame_post_draw
+	if "--profile-steady" in OS.get_cmdline_user_args():
+		JavaScriptBridge.eval("window.renderProfileName=" + JSON.stringify(name) + "; window.renderProfilePhase='ready'", true)
+		while JavaScriptBridge.eval("window.renderProfilePhase", true) != "running":
+			await process_frame
 	game.paused = false # deliberately no sync_pointer / external input request
 	game.hud.sync_menu()
+	if "--presentation-abba" in OS.get_cmdline_user_args():
+		JavaScriptBridge.eval("window.presentationStateCache.resetStats()", true)
 	Probe.reset(PackedStringArray(LABELS))
 	Probe.enabled = recording
 	var previous := Time.get_ticks_usec()
@@ -34,8 +49,10 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	var physics_start := Engine.get_physics_frames()
 	var draws := 0.0
 	var primitives := 0.0
+	var camera_mismatches := 0
 	while (Time.get_ticks_usec() - started) < duration * 1000000 and Probe.frame_count < Probe.FRAME_CAPACITY:
 		await RenderingServer.frame_post_draw
+		if not observer.current: camera_mismatches += 1
 		var now := Time.get_ticks_usec()
 		Probe.record_frame(now - previous)
 		previous = now
@@ -43,6 +60,13 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		primitives += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 	Probe.enabled = false
 	game.paused = true
+	var physics_end := Engine.get_physics_frames()
+	# Stop browser sampling before summary sorting, JSON/PNG and readback work.
+	# Snapshot physics count first: paused handshake frames are not gameplay.
+	if "--profile-steady" in OS.get_cmdline_user_args():
+		JavaScriptBridge.eval("window.renderProfilePhase='done'", true)
+		while JavaScriptBridge.eval("window.renderProfilePhase", true) != "stopped":
+			await process_frame
 	var result := Probe.summary()
 	var ordered: PackedFloat64Array = result.samples_ms.duplicate()
 	ordered.sort()
@@ -53,11 +77,14 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		travel += bot.travel
 	result.merge({"name": name, "build": game.BUILD,
 		"navigation": "original exact predicate" if reference_navigation else "production clearance",
-		"fixture": "normal nine-bot round; idle player; audio muted; no host input",
+		"fixture": "normal nine-bot round; idle player; fixed observer camera; audio muted; no host input",
+		"camera": {"position": [observer.global_position.x, observer.global_position.y, observer.global_position.z],
+			"rotation": [observer.global_rotation.x, observer.global_rotation.y, observer.global_rotation.z], "fov": observer.fov,
+			"mismatched_frames": camera_mismatches},
 		"instrumented": recording, "seed": game.match_seed,
 		"wrapper_control": "disabled controls still include wrapper dispatch/branch; not pristine source",
 		"elapsed_wall_seconds": (previous - started) / 1000000.0,
-		"elapsed_game_seconds": game.elapsed, "physics_ticks": Engine.get_physics_frames() - physics_start,
+		"elapsed_game_seconds": game.elapsed, "physics_ticks": physics_end - physics_start,
 		"mean_fps": Probe.frame_count * 1000000.0 / maxf(1, previous - started),
 		"p50_ms": ordered[ceili(ordered.size() * 0.5) - 1], "p95_ms": ordered[ceili(ordered.size() * 0.95) - 1],
 		"p99_ms": ordered[ceili(ordered.size() * 0.99) - 1],
@@ -66,6 +93,8 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		"ending_health": game.player.health, "render": game.render_budget.details(game.get_viewport()),
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"backend": JavaScriptBridge.eval("window.renderBackend", true)})
+	if "--presentation-abba" in OS.get_cmdline_user_args():
+		result.presentation_cache = JSON.parse_string(JavaScriptBridge.eval("JSON.stringify(window.presentationStateCache.snapshot())", true))
 	# Screenshot encoding and JS serialization are explicitly outside timing.
 	if "--capture" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
@@ -88,13 +117,24 @@ func run() -> void:
 	game.render_budget.level = 2
 	game.render_budget.apply(game)
 	game.hud.sync_menu()
+	game.add_child(observer)
+	observer.position = Vector3(1, 1.65, -33)
+	observer.look_at(Vector3(1.5, 1.6, -18))
+	observer.fov = 80
+	observer.near = 0.045
+	observer.far = 200
+	pin_observer()
+	RenderingServer.frame_pre_draw.connect(pin_observer)
 	# Keep the pause overlay out of the automated match, retaining the live HUD.
 	JavaScriptBridge.eval("""(() => {
 		const gl=document.getElementById('canvas').getContext('webgl2');
 		const ext=gl?.getExtension('WEBGL_debug_renderer_info');
 		window.renderBackend=ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'not exposed';
 	})()""", true)
-	if "--navigation-abba" in OS.get_cmdline_user_args():
+	if "--presentation-abba" in OS.get_cmdline_user_args():
+		for name in ["native-before", "cache-before", "cache-after", "native-after"]:
+			await run_segment(name, false)
+	elif "--navigation-abba" in OS.get_cmdline_user_args():
 		# Same renderer, probes and static geometry. Only segment_clear's point
 		# predicate switches between original calculation and broad-phase lookup.
 		for entry in [["reference-before", true], ["lookup-before", false], ["lookup-after", false], ["reference-after", true]]:
