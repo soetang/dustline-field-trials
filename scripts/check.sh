@@ -13,5 +13,6 @@ node tests/client-input.js
 node tests/touch-input.js
 node tests/models-check.js
 node tests/capture-tools.js
+node tests/browser-options.js
 node tests/smoke.js
 echo "Fast checks passed. Browser integration: npm run test:browser"

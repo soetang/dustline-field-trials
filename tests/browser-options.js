@@ -14,7 +14,7 @@ const {launchBrowser}=require('../scripts/browser-options');
     assert.equal(await launchBrowser({launch:async value=>{options=value;return browser;}}),browser);
     assert.equal(options.headless,true);
     assert.equal(options.env.DISPLAY,undefined);
-    assert.equal(options.env.WAYLAND_DISPLAY,undefined);
+    assert.equal(options.env.WAYLAND_DISPLAY,'dustline-no-host-display');
     assert.equal(process.env.DISPLAY,':0','Never change the user session environment');
     process.env.DUSTLINE_WINDOWS_BROWSER='1';
     assert.throws(()=>launchBrowser({}),/can trap the desktop mouse/);

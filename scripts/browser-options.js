@@ -17,6 +17,6 @@ exports.launchBrowser=chromium=>{
   // user's desktop. Software-rendered results are not hardware FPS benchmarks.
   const env={...process.env};
   delete env.DISPLAY;
-  delete env.WAYLAND_DISPLAY;
+  env.WAYLAND_DISPLAY='dustline-no-host-display';
   return chromium.launch({headless:true,env,args:exports.graphicsArgs()});
 };
