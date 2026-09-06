@@ -160,7 +160,7 @@ Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` chan
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.
 
-Once 0.4.4 is deployed (it is currently a development candidate), refresh and confirm
+After the 0.4.4 Pages deployment succeeds, refresh and confirm
 `courtyard-0.4.4-weapon-clearance`, play for 30–60 seconds on High, press Escape,
 and copy feedback details. Note the scene and whether slowdowns occur during
 fights or grow over time. A 12-round accelerated lifetime check verifies that
@@ -178,9 +178,23 @@ of human-level competitive play.
 
 ## Why not start with Rust or threads?
 
-The engine already executes as WebAssembly; JavaScript is mostly browser glue.
-Rust could help a demonstrated GDScript hotspot but does not remove post effects,
-material switches or draw submissions. Compatibility skinning already uses GPU
+The engine executes as WebAssembly; JavaScript is mostly browser glue. **Our
+GDScript does not thereby become compiled WebAssembly:** its bytecode still runs
+in the engine's script VM. See the [pinned GDScript architecture](https://github.com/godotengine/godot/blob/4.7.2-stable/modules/gdscript/README.md).
+Heavy script loops are legitimate candidates for compiled C++ or Rust. Godot's
+built-in rendering/physics operations already run in the compiled engine, however;
+changing their calling language does not make those operations faster. A useful
+experiment moves a measured script-heavy batch across the boundary and compares
+whole-frame timings, not just a standalone arithmetic loop. See
+[Godot's CPU optimization guidance](https://docs.godotengine.org/en/stable/tutorials/performance/cpu_optimization.html).
+
+Godot 4 C# projects currently cannot export to the web. GDExtension web projects
+need Extension Support enabled and a matching web-compiled extension; the current
+release has extension support disabled. A compiled experiment therefore needs
+its own compatible runtime/package, or a statically built engine module. It must
+retain the working release until startup, size, behavior and frame-time comparisons
+pass. Compiled gameplay does not remove post effects, material switches or draw
+submissions. Compatibility skinning already uses GPU
 transform feedback. CPU/GPU rendering times overlap, so they cannot simply be
 added to predict FPS. Browser threading also requires a threaded template and
 cross-origin isolation; it cannot safely wrap scene-tree/physics calls wholesale.

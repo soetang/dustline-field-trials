@@ -20,9 +20,10 @@ the [original browser game](https://soetang.github.io/dustline-field-trials/)
 continues to support touch controls. Native Forward+ graphics remain available;
 the web build uses Godot's lighter Compatibility renderer.
 
-Development candidate **0.4.4** adds weapon clearance, profiling and computational optimizations
-(the public preview remains 0.4.1 until deployment). **High remains
-the default** on desktop and web, preserving full resolution, four sun-shadow
+Version **0.4.4** adds weapon clearance, profiling and computational optimizations.
+Pushing to `main` runs verification and the exported browser playtest before
+GitHub Pages updates. **High remains the default** on desktop and web,
+preserving full resolution, four sun-shadow
 cascades and ambient occlusion. Escape → Graphics offers explicit lower-cost
 Balanced/Performance choices; those visual tradeoffs are not counted as
 same-quality computational improvements or selected automatically.
