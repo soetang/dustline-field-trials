@@ -4,6 +4,7 @@ extends CharacterBody3D
 const Layout = preload("res://scripts/layout.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
+const Aim = preload("res://scripts/bot_aim.gd")
 var game: Node3D
 var team := 1
 var index := 0
@@ -16,6 +17,11 @@ var think_left := 0.0
 var reaction := 0.0
 var burst_left := 3
 var burst_pause := 0.0
+var contact_age := 0.0
+var burst_shots := 0
+var higher_aim := false
+var aim_sample := 0.0
+var tracking_sample := 0.0
 var target: Node3D
 var last_seen := Vector3.ZERO
 var memory := 0.0
@@ -86,11 +92,13 @@ func eye() -> Vector3:
 
 func see(other: Node3D) -> bool:
 	if other.health <= 0 or other.team == team: return false
-	var delta: Vector3 = other.global_position + Vector3.UP * 1.35 - eye()
+	var height := 0.86 if other == game.player and game.player.crouched else 1.30
+	var seen_at: Vector3 = other.global_position + Vector3.UP * height
+	var delta: Vector3 = seen_at - eye()
 	if delta.length() > 58: return false
 	var facing := -global_basis.z
 	if delta.length() > 7 and facing.dot(delta.normalized()) < 0.22: return false
-	var query := PhysicsRayQueryParameters3D.create(eye(), other.global_position + Vector3.UP * 1.3, 1)
+	var query := PhysicsRayQueryParameters3D.create(eye(), seen_at, 1)
 	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
 func hear(at: Vector3) -> void:
@@ -108,7 +116,10 @@ func think() -> void:
 				closest = distance
 				candidate = other
 	if candidate != null:
-		if target != candidate: reaction = rng.randf_range(0.28, 0.54)
+		if target != candidate:
+			reaction = rng.randf_range(0.28, 0.54)
+			contact_age = 0
+			higher_aim = false
 		target = candidate
 		last_seen = candidate.global_position
 		memory = 2.2
@@ -116,6 +127,8 @@ func think() -> void:
 		game.objective.report_contact(self, last_seen)
 	else:
 		target = null
+		contact_age = 0
+		higher_aim = false
 	if memory > 0 or heard > 0:
 		look_goal = last_seen + Vector3.UP * 1.3
 	if not game.bomb_active and team == 1 and not route.is_empty():
@@ -166,6 +179,7 @@ func _physics_process(dt: float) -> void:
 	if think_left <= 0:
 		think_left = 0.16 + rng.randf() * 0.04
 		think()
+	if is_instance_valid(target): contact_age += dt
 	var facing := look_goal - eye()
 	if facing.length_squared() > 0.01:
 		var desired_yaw := atan2(-facing.x, -facing.z)
@@ -224,12 +238,28 @@ func _physics_process(dt: float) -> void:
 		shoot()
 
 func shoot() -> bool:
-	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0 or not see(target): return false
+	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0: return false
+	if not see(target):
+		contact_age = 0
+		higher_aim = false
+		return false
 	if ammo <= 0:
 		reload_left = Weapons.SPECS[slot].reload
 		return false
-	# Aim is based on a currently visible target; wall hits still stop the ray.
-	var aim: Vector3 = target.global_position + Vector3.UP * rng.randf_range(1.05, 1.5)
+	var shooter_speed := Vector2(velocity.x, velocity.z).length()
+	var target_speed := Vector2(target.velocity.x, target.velocity.z).length()
+	var distance := global_position.distance_to(target.global_position)
+	if burst_shots == 0:
+		# One intent per burst: mostly center mass, occasionally a deliberate
+		# higher shot at a settled, continuously visible and slow-moving target.
+		higher_aim = Aim.higher_aim_allowed(contact_age, shooter_speed, target_speed, distance) and rng.randf() < 0.08
+		aim_sample = rng.randf_range(-1, 1)
+		tracking_sample = rng.randf_range(-1, 1)
+	var precise := higher_aim and Aim.higher_aim_allowed(contact_age, shooter_speed, target_speed, distance)
+	var crouched: bool = target == game.player and game.player.crouched
+	var aim: Vector3 = target.global_position + Vector3.UP * Aim.aim_height(crouched, precise, aim_sample)
+	var lateral: Vector3 = (aim - eye()).cross(Vector3.UP).normalized()
+	aim += lateral * Aim.lateral_error(contact_age, target_speed, distance, tracking_sample)
 	var direction := (aim - eye()).normalized()
 	if (-global_basis.z).dot(Vector3(direction.x, 0, direction.z).normalized()) < 0.94: return false
 	var query := PhysicsRayQueryParameters3D.create(eye(), aim, 7, [get_rid()])
@@ -241,12 +271,14 @@ func shoot() -> bool:
 		think_left = 0
 		return false
 	blocked_fire = 0
-	game.fire_shot(self, eye(), direction, slot, deg_to_rad(0.75 + Vector2(velocity.x, velocity.z).length() * 0.23))
+	game.fire_shot(self, eye(), direction, slot, Aim.spread(slot, contact_age, shooter_speed, burst_shots))
 	shots += 1
 	ammo -= 1
 	cooldown = Weapons.SPECS[slot].interval
 	burst_left -= 1
+	burst_shots += 1
 	if burst_left <= 0:
+		burst_shots = 0
 		burst_left = rng.randi_range(2, 4)
 		burst_pause = rng.randf_range(0.28, 0.65)
 	game.sound.play_at(Weapons.SPECS[slot].model, eye(), 0, 0.97)

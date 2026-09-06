@@ -20,6 +20,13 @@ the [original browser game](https://soetang.github.io/dustline-field-trials/)
 continues to support touch controls. Native Forward+ graphics remain available;
 the web build uses Godot's lighter Compatibility renderer.
 
+Browser 0.3.1 makes normal bot aim stance-aware and body-focused. Crouching no
+longer leaves their aim fixed at standing height. Bots need sustained visible
+contact before occasional precision bursts at a slow, exposed target; moving
+targets add sideways tracking error rather than a larger headshot lottery.
+Weapon damage and headshot multipliers are unchanged, and both bot teams use
+the same rules. Standing in an open firing lane is still dangerous.
+
 From the repository root:
 
 ```sh
@@ -171,7 +178,7 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The shared game suites include **118 core checks, 47 tactical checks, 12 input checks,
+The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks, 12 input checks,
 33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse

@@ -11,7 +11,7 @@ const Objective = preload("res://scripts/objective.gd")
 const Combat = preload("res://scripts/combat.gd")
 const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
-const BUILD := "courtyard-0.3-web-preview"
+const BUILD := "courtyard-0.3.1-aim"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
