@@ -3,6 +3,7 @@ extends RefCounted
 
 const FootPlacement = preload("res://scripts/foot_placement.gd")
 const Layout = preload("res://scripts/layout.gd")
+const WeaponClearance = preload("res://scripts/weapon_clearance.gd")
 
 class Limb:
 	var upper: int
@@ -14,7 +15,8 @@ class Limb:
 	var lower_direction: Vector3
 
 ## Eighteen cached bones, analytical two-link IK, no animation textures/clips,
-## no extra physics queries. Visual poses never move an actor's hit capsule.
+## Visual poses never move an actor's hit capsule. Weapon clearance is a
+## separate cached hull query; feet still use the analytical floor sampler.
 var skeleton: Skeleton3D
 var model: Node3D
 var ids: Dictionary = {}
@@ -39,6 +41,7 @@ var foot_targets: Array[Transform3D] = []
 var arms: Array[Limb] = []
 var legs: Array[Limb] = []
 var weapon_rest_inverse: Transform3D
+var weapon_clearance := WeaponClearance.new()
 
 func setup(root: Node3D) -> void:
 	model = root
@@ -54,6 +57,7 @@ func setup(root: Node3D) -> void:
 		arms.append(cache_limb(ids["upperarm_" + side],ids["forearm_" + side],ids["hand_" + side]))
 		legs.append(cache_limb(ids["thigh_" + side],ids["shin_" + side],ids["foot_" + side]))
 	weapon_rest_inverse = rest[ids.weapon].affine_inverse()
+	weapon_clearance.configure(WeaponClearance.skinned_bounds(root, skeleton, ids.weapon))
 	flash = MeshInstance3D.new()
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.025
@@ -137,10 +141,10 @@ func animate(dt: float, actor: Node3D) -> void:
 	var working: bool = actor.role == "DEFUSE" and actor.game.defuser == actor
 	if actor.game.objective.carrier == actor and actor.game.objective.plant_progress > 0: working = true
 	update_pose(dt, moving, look, actor.reload_left, working, actor.health <= 0, yaw_rate,
-		actor.global_transform, Layout.floor_height)
+		actor.global_transform, Layout.floor_height, actor.get_world_3d().direct_space_state)
 
 func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float, working: bool, dead: bool, yaw_rate: float = 0,
-		body := Transform3D.IDENTITY, height := Callable()) -> void:
+		body := Transform3D.IDENTITY, height := Callable(), space: PhysicsDirectSpaceState3D = null) -> void:
 	clock += dt
 	var blend := 1 - exp(-dt * 12)
 	motion = motion.lerp(Vector3(velocity.x, 0, velocity.z), blend)
@@ -210,6 +214,21 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 	pose[weapon] = Transform3D(gun_rotation * weapon_rest.basis,
 		shoulder + gun_rotation * (weapon_rest.origin - shoulder) + Vector3(0, sin(clock * 2.2) * 0.004, recoil * 0.018))
 	var gun_delta := pose[weapon] * weapon_rest_inverse
+	if dead:
+		fall = minf(1, fall + dt * 2.4)
+		var eased := smoothstep(0, 1, fall)
+		model.rotation.x = -eased * PI * 0.5
+		model.position.y = eased * 0.2
+	if space != null:
+		var basis := body.basis * Basis(Vector3.RIGHT, -PI * 0.5)
+		var center := body * Vector3(0.08, 1.15, -0.04)
+		var safe := Transform3D(basis, center - basis * weapon_clearance.bounds.get_center())
+		var frame := skeleton.global_transform
+		var resolved := weapon_clearance.resolve(space, frame * gun_delta, safe, body * Vector3(0, 1.4, 0), dt)
+		if weapon_clearance.amount > 0 or not weapon_clearance.clear:
+			gun_delta = frame.affine_inverse() * resolved
+			pose[weapon] = gun_delta * rest[weapon]
+		flash.visible = flash.visible and weapon_clearance.clear
 	for i in 2:
 		var hand := gun_delta * rest[arms[i].end]
 		if i == 0 and reload_blend > 0:
@@ -222,9 +241,4 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 		solve_limb(legs[i], foot_targets[i], Vector3(sign * 0.13, 0.5, -1))
 	flash.position = gun_delta * Vector3(0.13, 1.425, -0.795)
 	flash.basis = gun_delta.basis.scaled(Vector3(0.8, 0.8, 2))
-	if dead:
-		fall = minf(1, fall + dt * 2.4)
-		var eased := smoothstep(0, 1, fall)
-		model.rotation.x = -eased * PI * 0.5
-		model.position.y = eased * 0.2
 	flush()

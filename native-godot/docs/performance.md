@@ -1,4 +1,4 @@
-# Browser performance: 0.4.3
+# Browser performance: 0.4.3–0.4.4
 
 ## Budget and method
 
@@ -109,6 +109,24 @@ future layouts fall back to the original predicate. Tests compare 38,255 points,
 five clearance radii and every navigation cell. This changes neither collision
 geometry nor path sampling, and is not yet a measured browser-FPS improvement.
 
+## Weapon clearance: correctness cost, not a performance optimization
+
+The 0.4.4 wall fix reuses one box and two query parameter objects per weapon.
+It checks the entire weapon hull plus a connection ray, with a bounded search
+only at contact. No scene nodes, textures or draw calls are added. A contact-plane
+correction handles diagonal walls and uphill ground without hiding the weapon.
+Open operator poses bypass the world/local round-trip and remain unchanged.
+
+On this host, the final five warmed 240-frame native grounded-idle samples measured
+40.64 → 44.21 µs per operator in open space (two queries), and 41.40 → 72.32 µs
+at wall contact (12 queries). An earlier run measured 39.70 → 51.24 and
+40.40 → 71.86 µs respectively: host timing varies, particularly for small deltas.
+That is approximately 0.03–0.10 ms added across nine open-space operators and
+0.28 ms across nine contact poses. These are sequential native implementation-cost
+samples, not browser FPS, a whole-match measurement or a worst-case GPU budget.
+The full geometric weapon test plus optional `--cpu-sample` takes about 3.8 seconds
+on this host; 26,398 assertions cover 3,240 player and 1,300 rig poses.
+
 ## Reproduce and inspect
 
 From the repository root, with the official Godot web templates installed:
@@ -142,8 +160,8 @@ Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` chan
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.
 
-Once 0.4.3 is deployed (it is currently a development candidate), refresh and confirm
-`courtyard-0.4.3-frame-budget`, play for 30–60 seconds on High, press Escape,
+Once 0.4.4 is deployed (it is currently a development candidate), refresh and confirm
+`courtyard-0.4.4-weapon-clearance`, play for 30–60 seconds on High, press Escape,
 and copy feedback details. Note the scene and whether slowdowns occur during
 fights or grow over time. A 12-round accelerated lifetime check verifies that
 round resets do not accumulate scene nodes; longer rendered matches still need

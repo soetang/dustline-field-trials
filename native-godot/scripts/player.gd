@@ -3,6 +3,8 @@ extends CharacterBody3D
 
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
+const WeaponClearance = preload("res://scripts/weapon_clearance.gd")
+const VIEW_SCALE := 0.54
 var game: Node3D
 var team := 0
 var health := 100.0
@@ -29,6 +31,8 @@ var capsule: CapsuleShape3D
 var collision: CollisionShape3D
 var sensitivity := 0.0018
 var pending_fire := false
+var weapon_clearance := WeaponClearance.new()
+var muzzle_local := Vector3.ZERO
 
 func _ready() -> void:
 	collision_layer = 2
@@ -53,7 +57,7 @@ func _ready() -> void:
 	head.add_child(camera)
 	held = Node3D.new()
 	held.position = Vector3(0.24, -0.25, -0.55)
-	held.scale = Vector3.ONE * 0.54
+	held.scale = Vector3.ONE * VIEW_SCALE
 	camera.add_child(held)
 	muzzle = OmniLight3D.new()
 	muzzle.light_color = Color("ffd593")
@@ -79,6 +83,10 @@ func equip(index: int) -> void:
 	gun = scene.instantiate()
 	held.add_child(gun)
 	Models.prepare(gun, true)
+	var hull := WeaponClearance.scene_bounds(gun)
+	weapon_clearance.configure(AABB(hull.position * VIEW_SCALE, hull.size * VIEW_SCALE))
+	var marker: Node3D = gun.find_child("muzzle*", true, false)
+	muzzle_local = gun.to_local(marker.global_position) * VIEW_SCALE
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game.paused or health <= 0: return
@@ -138,12 +146,29 @@ func _process(dt: float) -> void:
 	camera.fov = lerpf(camera.fov, (30.0 if slot == 2 else 62.0) if aimed else 80.0, 1.0 - exp(-dt * 12))
 	var moving := Vector2(velocity.x, velocity.z).length()
 	var bob := sin(Time.get_ticks_msec() * 0.009) * minf(moving * 0.0017, 0.009)
-	held.position = Vector3(0.08 if aimed else 0.24, (-0.19 if aimed else -0.25) + bob, -0.55 + recoil.x * 2.1)
-	held.rotation = Vector3(recoil.x * 0.6, 0, sin(reload_left * 4.0) * 0.28 if reload_left > 0 else 0.0)
-	held.position.y -= sin(clampf(reload_left / float(Weapons.SPECS[slot].reload), 0, 1) * PI) * 0.28
-	held.visible = not (slot == 2 and aimed) and health > 0
+	update_weapon_pose(dt, bob)
 	flash_left = maxf(0.0, flash_left - dt)
-	muzzle.visible = flash_left > 0
+	muzzle.visible = flash_left > 0 and health > 0 and weapon_clearance.clear
+
+func update_weapon_pose(dt: float, bob: float = 0) -> void:
+	if health <= 0:
+		held.visible = false
+		return
+	var at := Vector3(0.08 if aimed else 0.24, (-0.19 if aimed else -0.25) + bob, -0.55 + recoil.x * 2.1)
+	var rotation := Vector3(recoil.x * 0.6, 0, sin(reload_left * 4.0) * 0.28 if reload_left > 0 else 0.0)
+	at.y -= sin(clampf(reload_left / float(Weapons.SPECS[slot].reload), 0, 1) * PI) * 0.28
+	var desired := camera.global_transform * Transform3D(Basis.from_euler(rotation), at)
+	# World-upright low ready stays inside the body's horizontal footprint even
+	# looking sharply up/down. Include hands and stock, not just the barrel.
+	var basis := global_basis * Basis(Vector3.RIGHT, -PI * 0.5)
+	var ready_height := maxf(head.position.y - 0.65,
+		weapon_clearance.bounds.size.z * 0.5 + WeaponClearance.SKIN + 0.01)
+	var center := global_transform * Vector3(0.10, ready_height, -0.02)
+	var safe := Transform3D(basis, center - basis * weapon_clearance.bounds.get_center())
+	var resolved := weapon_clearance.resolve(get_world_3d().direct_space_state, desired, safe, camera.global_position, dt)
+	held.global_transform = Transform3D(resolved.basis.scaled(Vector3.ONE * VIEW_SCALE), resolved.origin)
+	muzzle.global_position = resolved * muzzle_local
+	held.visible = not (slot == 2 and aimed) and health > 0 and weapon_clearance.clear
 
 func fire() -> bool:
 	if cooldown > 0 or reload_left > 0 or health <= 0 or ammo <= 0 or game.phase != "LIVE":

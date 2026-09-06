@@ -29,6 +29,12 @@ grep -Eq '^QUERY_REUSE: [0-9]+/[0-9]+ passed' "$log_dir/query-reuse.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/room_lookup.gd -- --test 2>&1 | tee "$log_dir/room-lookup.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/room-lookup.log"; then exit 1; fi
 grep -Eq '^ROOM_LOOKUP: [0-9]+/[0-9]+ passed' "$log_dir/room-lookup.log"
+"$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/wall_collision.gd -- --test 2>&1 | tee "$log_dir/wall-collision.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/wall-collision.log"; then exit 1; fi
+grep -Eq '^WALL_COLLISION: [0-9]+/[0-9]+ passed' "$log_dir/wall-collision.log"
+"$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/weapon_walls.gd -- --test 2>&1 | tee "$log_dir/weapon-walls.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/weapon-walls.log"; then exit 1; fi
+grep -Eq '^WEAPON_WALLS: [0-9]+/[0-9]+ passed' "$log_dir/weapon-walls.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/operators.gd -- --test 2>&1 | tee "$log_dir/operators.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/operators.log"; then exit 1; fi
 grep -Eq '^OPERATORS: [0-9]+/[0-9]+ passed' "$log_dir/operators.log"

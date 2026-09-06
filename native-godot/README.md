@@ -20,7 +20,7 @@ the [original browser game](https://soetang.github.io/dustline-field-trials/)
 continues to support touch controls. Native Forward+ graphics remain available;
 the web build uses Godot's lighter Compatibility renderer.
 
-Development candidate **0.4.3** adds profiling and computational optimizations
+Development candidate **0.4.4** adds weapon clearance, profiling and computational optimizations
 (the public preview remains 0.4.1 until deployment). **High remains
 the default** on desktop and web, preserving full resolution, four sun-shadow
 cascades and ambient occlusion. Escape → Graphics offers explicit lower-cost
@@ -30,6 +30,13 @@ Experimental material consolidation is disabled by default pending repeatable
 whole-frame gains; original geometry, collision and batching defaults remain.
 Cached operator math reduces repeated terrain samples without reducing animation
 cadence. The previous 0.4.2 opening-headshot fix is included.
+
+Player weapons and operator guns now withdraw into a low-ready pose near walls
+and thin doors. Clearance covers the whole weapon (including first-person hands),
+and the operators' hand IK follows the adjusted gun. Quick turns are checked
+before drawing; stepping away restores the normal pose smoothly. Bullets, damage,
+body collision and open-space animations are unchanged. No depth-test override,
+graphics-preset reduction or new art assets are used.
 
 **F3** shows FPS, p95 frame time and draw calls. Escape → Copy feedback details
 includes recent live p50/p95/p99 frame times, stalls, actual render resolution,
@@ -302,6 +309,11 @@ uses background Chrome and a temporary, separately exported review scene. It
 preserves the game's lighting and assets, but stages cameras and hides actors:
 these are architecture-review images, not gameplay or FPS measurements. Neither
 the review scene nor its test commands are included in the playable release.
+Add `--wall-review` for twelve staged operator/wall views, both sides of a thin
+door and a first-person contact view. This mode also permits
+`--windows-render-only` with immutable input/pointer-capture denial. The fast
+`wall_collision.gd` and `weapon_walls.gd` suites independently check real capsule
+sweeps, full weapon hulls, actual skinned vertices, hand contact and blocked shots.
 Add `--motion-study --label=study` to an operator review to render 360 exact-timestep
 frames of uphill walking, turning and reloading. Encode those with
 `blender --background --python native-godot/tools/encode_study.py -- study`.
