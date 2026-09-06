@@ -64,6 +64,8 @@ func _ready() -> void:
 	add_child(model)
 	Models.prepare(model)
 	rig.setup(model)
+	rig.clock = index * 0.73
+	rig.grounding.next_foot = index % 2
 	rotation.y = 0 if team == 1 else PI
 	progress_at = position
 	think_left = index * 0.018

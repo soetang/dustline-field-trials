@@ -1,6 +1,9 @@
 class_name FieldOperatorRig
 extends RefCounted
 
+const FootPlacement = preload("res://scripts/foot_placement.gd")
+const Layout = preload("res://scripts/layout.gd")
+
 ## Eighteen cached bones, analytical two-link IK, no animation textures/clips,
 ## no extra physics queries. Visual poses never move an actor's hit capsule.
 var skeleton: Skeleton3D
@@ -21,6 +24,9 @@ var last_yaw := 0.0
 var turn := 0.0
 var flash: MeshInstance3D
 var flash_left := 0.0
+var grounding := FootPlacement.new()
+var foot_rests: Array[Transform3D] = []
+var foot_targets: Array[Transform3D] = []
 
 func setup(root: Node3D) -> void:
 	model = root
@@ -31,6 +37,7 @@ func setup(root: Node3D) -> void:
 		local_rest.append(skeleton.get_bone_rest(i))
 		pose.append(rest[i])
 		parents.append(skeleton.get_bone_parent(i))
+	for side in ["l", "r"]: foot_rests.append(rest[ids["foot_" + side]])
 	flash = MeshInstance3D.new()
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.025
@@ -98,9 +105,11 @@ func animate(dt: float, actor: Node3D) -> void:
 	last_yaw = actor.rotation.y
 	var working: bool = actor.role == "DEFUSE" and actor.game.defuser == actor
 	if actor.game.objective.carrier == actor and actor.game.objective.plant_progress > 0: working = true
-	update_pose(dt, moving, look, actor.reload_left, working, actor.health <= 0, yaw_rate)
+	update_pose(dt, moving, look, actor.reload_left, working, actor.health <= 0, yaw_rate,
+		actor.global_transform, Layout.floor_height)
 
-func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float, working: bool, dead: bool, yaw_rate: float = 0) -> void:
+func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float, working: bool, dead: bool, yaw_rate: float = 0,
+		body := Transform3D.IDENTITY, height := Callable()) -> void:
 	clock += dt
 	var blend := 1 - exp(-dt * 12)
 	motion = motion.lerp(Vector3(velocity.x, 0, velocity.z), blend)
@@ -114,10 +123,48 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 	var amount := clampf(speed / 4.65, 0, 1)
 	# A slow walk uses shorter steps. Phase follows real movement, not wall time.
 	var stride := lerpf(0.55, 1.95, amount)
+	if height.is_valid() and speed > 0.18 and not grounding.walking:
+		# Begin with a short first stance. Otherwise an accelerating actor can
+		# travel an entire half-stride past a foot still planted at its spawn.
+		phase = 0.30 + (0.5 if grounding.next_foot == 1 else 0)
 	phase = fposmod(phase + speed * dt / stride, 1)
+	foot_targets.clear()
+	for i in 2:
+		var foot := foot_rests[i]
+		var step := fposmod(phase + (0.5 if i == 0 else 0), 1)
+		var along: float
+		var lift := 0.0
+		if step < 0.46:
+			along = 0.5 - step / 0.46
+		else:
+			var swing := (step - 0.46) / 0.54
+			along = -0.5 + smoothstep(0, 1, swing)
+			lift = sin(swing * PI) * 0.15 * amount
+		foot.origin += motion.normalized() * along * stride * 0.46 * minf(speed / 0.5, 1)
+		foot.origin.y += lift
+		foot.basis = Basis(Vector3.RIGHT, -lift * 0.8) * foot.basis
+		foot_targets.append(foot)
+	if height.is_valid() and not dead:
+		foot_targets = grounding.update(dt, body, foot_targets, foot_rests, phase, speed, height)
 	inherit_pose()
 	var pelvis: int = ids.pelvis
 	pose[pelvis].origin.y -= 0.025 + amount * (0.10 + absf(sin(phase * TAU * 2)) * 0.018)
+	# Let the lower foot reach downhill ground without stretching the leg.
+	var ground_drop := minf(foot_targets[0].origin.y-foot_rests[0].origin.y,
+		foot_targets[1].origin.y-foot_rests[1].origin.y)
+	pose[pelvis].origin.y += clampf(ground_drop, -0.18, 0)
+	if height.is_valid():
+		var reachable_y := pose[pelvis].origin.y
+		for i in 2:
+			var side := "l" if i == 0 else "r"
+			var hip: Transform3D = rest[ids["thigh_"+side]]
+			var knee: Transform3D = rest[ids["shin_"+side]]
+			var length := hip.origin.distance_to(knee.origin) + knee.origin.distance_to(foot_rests[i].origin) - 0.003
+			var across := Vector2(foot_targets[i].origin.x-hip.origin.x,foot_targets[i].origin.z-hip.origin.z).length_squared()
+			reachable_y = minf(reachable_y,foot_targets[i].origin.y+sqrt(maxf(0,length*length-across)))
+		# Small weight shifts keep accelerating strides reachable without either
+		# stretching a knee or silently lifting a planted sole off the floor.
+		pose[pelvis].origin.y = maxf(reachable_y,pose[pelvis].origin.y-0.08)
 	pose[pelvis].basis = Basis.from_euler(Vector3(-amount * 0.07, -turn * 0.025, -motion.x * 0.008))
 	rotate_bone("spine", Vector3(aim.x * 0.3 - (0.12 if working else 0), aim.y * 0.35, sin(phase * TAU) * amount * 0.025))
 	rotate_bone("chest", Vector3(aim.x * 0.35, aim.y * 0.3, 0))
@@ -141,20 +188,7 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 		var sign := -1.0 if side == "l" else 1.0
 		var pole := pose[chest] * Vector3(sign * 0.45, -0.32, -0.05)
 		solve_limb("upperarm_" + side, "forearm_" + side, "hand_" + side, hand, pole)
-		var foot := rest[ids["foot_" + side]]
-		var step := fposmod(phase + (0.5 if side == "l" else 0), 1)
-		var along: float
-		var lift := 0.0
-		if step < 0.46:
-			along = 0.5 - step / 0.46
-		else:
-			var swing := (step - 0.46) / 0.54
-			along = -0.5 + smoothstep(0, 1, swing)
-			lift = sin(swing * PI) * 0.15 * amount
-		foot.origin += motion.normalized() * along * stride * 0.46 * minf(speed / 0.5, 1)
-		foot.origin.y += lift
-		# Keep feet flat in stance and bend knees toward the facing direction.
-		foot.basis = Basis(Vector3.RIGHT, -lift * 0.8) * foot.basis
+		var foot := foot_targets[0 if side == "l" else 1]
 		solve_limb("thigh_" + side, "shin_" + side, "foot_" + side, foot, Vector3(sign * 0.13, 0.5, -1))
 	flash.position = gun_delta * Vector3(0.13, 1.425, -0.795)
 	flash.basis = gun_delta.basis.scaled(Vector3(0.8, 0.8, 2))

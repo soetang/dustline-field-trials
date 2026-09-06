@@ -9,6 +9,7 @@ var folder := "res://builds/operator-gallery"
 var label := "current"
 var actors: Array[Node3D] = []
 var rigs: Array[FieldOperatorRig] = []
+var floor_mesh := MeshInstance3D.new()
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -25,6 +26,34 @@ func capture(view: String, from: Vector3, at: Vector3) -> void:
 	var error := root.get_texture().get_image().save_png(filename)
 	print("GALLERY_CAPTURE ", filename, " result=", error)
 	assert(error == OK)
+
+func motion_study() -> void:
+	# Exact simulation timestamps; rendered offline, NOT a gameplay FPS sample.
+	floor_mesh.rotation.z = atan(0.275)
+	var height := func(p: Vector2) -> float: return p.x * 0.275
+	for i in 2:
+		actors[i].position = Vector3(0,0,-0.65 if i == 0 else 0.65)
+		actors[i].rotation.y = -PI * 0.5
+		rigs[i].grounding.next_foot = i
+	for frame in 360:
+		var t := frame / 60.0
+		var velocity := Vector3(1.5,0,0) if t < 2.0 else Vector3.ZERO
+		for i in 2:
+			var actor := actors[i]
+			actor.position += velocity / 60.0
+			actor.position.y = height.call(Vector2(actor.position.x,actor.position.z))
+			actor.rotation.y = -PI*0.5 + smoothstep(2,3.5,t)*PI*0.5
+			rigs[i].update_pose(1.0/60,actor.basis.inverse()*velocity,Vector2(0.1,0.1),
+				6.0-t if t>3.7 else 0.0,false,false,1 if t>2 and t<3.5 else 0,
+				actor.global_transform,height)
+		var center := (actors[0].position+actors[1].position)*0.5
+		camera.position = center + Vector3(3.5,1.55,-3.7)
+		camera.look_at(center+Vector3.UP)
+		await process_frame
+		await RenderingServer.frame_post_draw
+		var filename := ProjectSettings.globalize_path(folder).path_join(label+"-frame-%04d.png" % frame)
+		assert(root.get_texture().get_image().save_png(filename) == OK)
+	print("OPERATOR_MOTION_STUDY frames=360 fps=60 offline=true")
 
 func run() -> void:
 	if DisplayServer.get_name() == "headless":
@@ -55,7 +84,6 @@ func run() -> void:
 	fill.light_color = Color("c1d5e7")
 	fill.light_energy = 0.4
 	scene.add_child(fill)
-	var floor_mesh := MeshInstance3D.new()
 	floor_mesh.mesh = PlaneMesh.new()
 	floor_mesh.mesh.size = Vector2(200, 200)
 	var floor_mat := StandardMaterial3D.new()
@@ -92,6 +120,13 @@ func run() -> void:
 	camera.current = true
 	scene.add_child(camera)
 	await frames(20)
+	if "--motion-study" in OS.get_cmdline_user_args():
+		await motion_study()
+		print("OPERATOR_GALLERY_OK")
+		scene.queue_free()
+		await process_frame
+		quit()
+		return
 	await capture("front", Vector3(0, 1.10, -4.7), Vector3(0, 1.04, 0))
 	await capture("quarter", Vector3(3, 1.65, -4.5), Vector3(0, 1, 0))
 	await capture("back", Vector3(0, 1.35, 4.7), Vector3(0, 1, 0))
