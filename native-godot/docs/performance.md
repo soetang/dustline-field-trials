@@ -392,6 +392,32 @@ GPU bottleneck. These roughly 32–35 ms timeline spans exceed a 16.67 ms total
 The first prototype also allocated its query pool in the first sampled frame;
 the helper now moves initial pool allocation before the window's wall timer.
 
+### Supply-crate visual prototype (not enabled in public gameplay)
+
+`--crate-detail` with a map review or render benchmark substitutes an original
+beveled, planked supply-crate mesh only in the temporary project. It is separate
+from engine baseline/patch comparisons. `scene=crates` in the remote review
+workflow captures the same five map views as `scene=map` with this prototype.
+
+Each prop has one indexed visible surface with baked wood/metal vertex colors,
+seams, bevels, rivets and small original shipping marks. No new texture downloads,
+label nodes, animation work or fragment-noise loops are required. The existing
+solid cover box is retained unchanged, and supplies the simple shadow silhouette;
+the fine cladding does not repeat across the four sun-shadow cascades. This is an
+intentional geometric shadow proxy, not exact micro-bevel self-shadowing.
+
+The headless geometry test passes 174 checks across all sixteen cover sizes and
+three small/extreme sizes: bounds, clockwise winding, finite unit normals,
+deterministic output, shared material, one surface, retained collision and fewer
+than 850 triangles per prop. These are geometry checks, **not** a visual approval
+or a measured FPS improvement. The prototype and its shader are excluded from
+public game packs until rendered review and same-engine cost comparisons pass.
+
+```sh
+node native-godot/tests/map-review-browser.js --crate-detail
+node native-godot/tests/map-review-browser.js --benchmark --crate-detail --capture --samples=90 --warmup=30 --width=1920 --height=882 --windows-render-only
+```
+
 Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` changes
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.

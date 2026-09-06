@@ -56,6 +56,9 @@ grep -Eq '^MAP_UPDATE: [0-9]+/[0-9]+ passed' "$log_dir/map.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/material_batches.gd -- --test 2>&1 | tee "$log_dir/material-batches.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/material-batches.log"; then exit 1; fi
 grep -Eq '^MATERIAL_BATCHES: [0-9]+/[0-9]+ passed' "$log_dir/material-batches.log"
+timeout 20s "$godot_bin" --headless --path "$project_dir" --script res://tests/crate_mesh.gd 2>&1 | tee "$log_dir/crate-mesh.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/crate-mesh.log"; then exit 1; fi
+grep -Eq '^CRATE_MESH: [0-9]+/[0-9]+ passed' "$log_dir/crate-mesh.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/input.gd -- --test 2>&1 | tee "$log_dir/input.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/input.log"; then exit 1; fi
 grep -Eq '^INPUT: [0-9]+/[0-9]+ passed' "$log_dir/input.log"

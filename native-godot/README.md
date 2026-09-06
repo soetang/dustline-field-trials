@@ -23,9 +23,10 @@ the web build uses Godot's lighter Compatibility renderer.
 Version **0.4.5** adds profile-guided navigation acceleration, retaining 0.4.4's
 weapon clearance. A 31 KB lookup skips repeated geometry calculations only where
 the entire query cell is provably clear or blocked; edges use the original exact
-checks. The same-graphics, nine-bot browser fixture improved from ~20 to ~29–30 FPS
-on integrated AMD graphics at 1280×720. This is not a 1080p/60 FPS claim or a
-long-session guarantee; see the measurements and limitations below.
+checks. Profiled path-clearance cost per call fell by roughly 83% on integrated
+AMD graphics. Whole-frame performance remains scene/device dependent; recent
+1920×882 live feedback averages about 28.5 FPS, not 60. Earlier aggregate
+comparisons had camera/warmup limitations; see the measurements below.
 Pushing to `main` runs verification and the exported browser playtest before
 GitHub Pages updates. **High remains the default** on desktop and web,
 preserving full resolution, four sun-shadow

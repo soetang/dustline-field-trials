@@ -20,6 +20,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const navigationAbba = process.argv.includes('--navigation-abba');
   const presentationAbba = process.argv.includes('--presentation-abba');
   const gpuTiming = process.argv.includes('--gpu-timing');
+  const crateDetail = process.argv.includes('--crate-detail');
+  assert.ok(!crateDetail || (!wallReview && !gameplayProfile),'Crate prototype is only available in map/render fixtures');
   assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
   assert.ok(!presentationAbba || (gameplayProfile && !navigationAbba),'Presentation ABBA requires --gameplay-profile without --navigation-abba');
   assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
@@ -66,6 +68,27 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
   }
   const batchCell = process.argv.find(arg=>arg.startsWith('--batch-cell='))?.split('=')[1];
+  if (crateDetail) {
+    fs.copyFileSync(path.join(project,'engine/experiments/crate.gdshader'),path.join(reviewProject,'_crate.gdshader'));
+    const crateSource=fs.readFileSync(path.join(project,'engine/experiments/crate_mesh.gd'),'utf8')
+      .replace('res://engine/experiments/crate.gdshader','res://_crate.gdshader');
+    fs.writeFileSync(path.join(reviewProject,'_crate_mesh.gd'),crateSource);
+    const file=path.join(reviewProject,'scripts/world.gd');
+    const source=fs.readFileSync(file,'utf8');
+    const start=source.indexOf('func crate(rect: Rect2, index: int) -> void:');
+    const end=source.indexOf('\nfunc arch(',start);
+    assert.ok(start>=0 && end>start,'Prototype replaces only the crate visual constructor');
+    const replacement=`func crate(rect: Rect2, index: int) -> void:
+\tvar center := rect.get_center()
+\tvar height := 1.1 if index % 3 == 0 else 2.0
+\tvar base := Layout.floor_height(center)
+\tvar tint := Color("806e50") if index % 2 == 0 else Color("6d745d")
+\tvar size := Vector3(rect.size.x, height, rect.size.y)
+\tvar body := box(Vector3(center.x, base + height * 0.5, center.y), size, material(tint), true)
+\tpreload("res://_crate_mesh.gd").replace_visual(body, size, tint, 7000 + index)
+`;
+    fs.writeFileSync(file,source.slice(0,start)+replacement+source.slice(end));
+  }
   if (batchCell) {
     assert.ok(benchmark && ['8','16','24'].includes(batchCell));
     const file=path.join(reviewProject,'scripts/world.gd');
@@ -289,7 +312,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       fs.writeFileSync(path.join(artifacts,capture.name+'.png'),png);
       delete capture.png;
     }
-    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,staged:true,args,captures},null,2)+'\n');
+    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,crate_prototype:crateDetail,staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
     console.log('PASS:',gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
