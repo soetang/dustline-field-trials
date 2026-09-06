@@ -330,6 +330,68 @@ to thirty. Gameplay windows collect at least twelve real frames, extending a
 short requested duration on very slow software renderers. Actual wall duration,
 requested duration and warmup count are recorded; no missing frames are invented.
 
+The corrected remote CPU fixture passed in
+[run 34059064315](https://github.com/soetang/dustline-field-trials/actions/runs/34059064315):
+all four windows recorded twelve real frames and zero observer-camera mismatches.
+Those windows took 7.06–7.18 seconds on SwiftShader, not three seconds; this is
+correctness evidence only, not comparable to the user's AMD live feedback.
+
+### Optional asynchronous GPU intervals
+
+`--gpu-timing` injects a temporary WebGL2 timer probe into `--benchmark` or
+`--gameplay-profile`. Nothing is added to the public game's scripts or pack.
+Gameplay uses timer off/on/on/off windows with the CPU recorder disabled
+throughout. The disabled controls still include fixture hooks and the optional
+blit-counter wrapper; compare whole-frame statistics before trusting probe cost.
+It cannot be combined with the navigation or presentation-cache experiments.
+
+```sh
+node native-godot/tests/map-review-browser.js --gameplay-profile --gpu-timing --windows-render-only --duration=12 --width=1920 --height=882
+```
+
+The [WebGL2 disjoint timer extension](https://registry.khronos.org/webgl/extensions/EXT_disjoint_timer_query_webgl2/)
+must be exposed and have nonzero elapsed counter bits; otherwise the result is
+explicitly unavailable, not zero milliseconds. A small query pool samples every
+fourth frame and polls old results asynchronously. It never waits for GPU results
+inside the measured frame, never calls `finish`, and never reads the game's GL
+error queue. Lost/disjoint generations and unresolved queries are reported.
+The post-window drain is bounded to one second and excludes screenshots/JSON.
+
+The signals bracket engine rendering, including the pinned engine's explicit
+presentation blit according to the pinned source order, but not browser
+composition or scanout. A temporary counter records all owned-context blit
+calls inside/outside the query bracket; it does not uniquely identify presentation
+or establish that a draw succeeded. These
+are **GPU-timeline intervals, not pure GPU-busy time**: submission gaps, preemption
+and backend accounting can matter. Do not subtract GPU intervals from CPU wall
+time to invent an exclusive CPU/GPU breakdown. Remote `scene=gpu` validates the
+fixture using software rendering; it does not measure the player's hardware.
+
+First real-device check, 2026-09-06, official 0.4.5, AMD ANGLE/D3D11,
+High 1920×882, SSAO/full scale retained, compiler stopped, fixed observer:
+
+| Timer window | Whole-frame FPS | Frame p95 ms | Valid GPU intervals | GPU mean / p95 ms |
+|---|---:|---:|---:|---:|
+| Off before | 20.02 | 83.7 | 0 | not sampled |
+| On before | 23.66 | 69.5 | 71 | 34.73 / 49.13 |
+| On after | 24.82 | 63.0 | 75 | 32.48 / 41.74 |
+| Off after | 24.25 | 60.8 | 0 | not sampled |
+
+The extension exposed 64-bit elapsed counters. All samples were positive, with
+four owned-context blit calls per query; collection latency was 2–4 rendered
+frames. No disjoint/loss/error/ownership conflict or pending result remained.
+Disabled controls issued no GPU query/poll operations. All four camera mismatch
+counts were zero; approximately 937–938 mean draw calls were rendered.
+Raw local evidence: `artifacts/map-review-browser-03bDGl/captures.json`.
+
+The first disabled window was substantially slower than the last, so this trial
+does **not** establish a precise probe overhead or an optimization speedup.
+It supports investigating rendering/submission further, not declaring a pure
+GPU bottleneck. These roughly 32–35 ms timeline spans exceed a 16.67 ms total
+60-FPS budget, but include potential GPU idle gaps between submitted commands.
+The first prototype also allocated its query pool in the first sampled frame;
+the helper now moves initial pool allocation before the window's wall timer.
+
 Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` changes
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.

@@ -10,6 +10,7 @@ var observer := Camera3D.new()
 var duration := 12.0
 var warmup := 30
 var resolution := Vector2i(1280, 720)
+var gpu_probe: RefCounted
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -43,6 +44,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	game.hud.sync_menu()
 	if "--presentation-abba" in OS.get_cmdline_user_args():
 		JavaScriptBridge.eval("window.presentationStateCache.resetStats()", true)
+	if gpu_probe: gpu_probe.start(name, name.begins_with("timer-on-"))
 	Probe.reset(PackedStringArray(LABELS))
 	Probe.enabled = recording
 	var previous := Time.get_ticks_usec()
@@ -65,6 +67,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		primitives += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 	Probe.enabled = false
 	game.paused = true
+	if gpu_probe: gpu_probe.stop()
 	var physics_end := Engine.get_physics_frames()
 	# Stop browser sampling before summary sorting, JSON/PNG and readback work.
 	# Snapshot physics count first: paused handshake frames are not gameplay.
@@ -101,6 +104,9 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		"backend": JavaScriptBridge.eval("window.renderBackend", true)})
 	if "--presentation-abba" in OS.get_cmdline_user_args():
 		result.presentation_cache = JSON.parse_string(JavaScriptBridge.eval("JSON.stringify(window.presentationStateCache.snapshot())", true))
+	if gpu_probe:
+		result.gpu_timing_requested = name.begins_with("timer-on-")
+		result.gpu_timing = await gpu_probe.collect(self)
 	# Screenshot encoding and JS serialization are explicitly outside timing.
 	if "--capture" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
@@ -132,13 +138,19 @@ func run() -> void:
 	observer.far = 200
 	pin_observer()
 	RenderingServer.frame_pre_draw.connect(pin_observer)
+	if "--gpu-timing" in OS.get_cmdline_user_args(): gpu_probe = load("res://_gpu_profile.gd").new()
 	# Keep the pause overlay out of the automated match, retaining the live HUD.
 	JavaScriptBridge.eval("""(() => {
 		const gl=document.getElementById('canvas').getContext('webgl2');
 		const ext=gl?.getExtension('WEBGL_debug_renderer_info');
 		window.renderBackend=ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'not exposed';
 	})()""", true)
-	if "--presentation-abba" in OS.get_cmdline_user_args():
+	if gpu_probe:
+		# CPU recorder stays disabled in all four GPU-probe overhead windows.
+		for name in ["timer-off-before", "timer-on-before", "timer-on-after", "timer-off-after"]:
+			await run_segment(name, false)
+		gpu_probe.dispose()
+	elif "--presentation-abba" in OS.get_cmdline_user_args():
 		for name in ["native-before", "cache-before", "cache-after", "native-after"]:
 			await run_segment(name, false)
 	elif "--navigation-abba" in OS.get_cmdline_user_args():

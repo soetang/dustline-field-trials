@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       scene:
-        description: 'Map/wall screenshots or CPU-fixture check; not hardware FPS'
+        description: 'Map/wall screenshots or CPU/GPU-fixture check; not hardware FPS'
         type: choice
         default: map
-        options: [map, walls, cpu]
+        options: [map, walls, cpu, gpu]
 permissions:
   contents: read
 concurrency:
@@ -39,6 +39,10 @@ jobs:
             map) node native-godot/tests/map-review-browser.js ;;
             walls) node native-godot/tests/map-review-browser.js --wall-review ;;
             cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
+            gpu)
+              node native-godot/tests/map-review-browser.js --gameplay-profile --gpu-timing --duration=3 --warmup=3 --width=640 --height=360
+              node native-godot/tests/map-review-browser.js --benchmark --gpu-timing --samples=12 --warmup=3 --width=640 --height=360
+              ;;
             *) exit 1 ;;
           esac
       - uses: actions/upload-artifact@v4

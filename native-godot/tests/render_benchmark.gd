@@ -10,6 +10,7 @@ var samples := 60
 var warmup := 12
 var resolution := Vector2i(640, 360)
 var frame := 0
+var gpu_probe: RefCounted
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -31,6 +32,7 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 		JavaScriptBridge.eval("window.renderProfileName="+JSON.stringify(name)+"; window.renderProfilePhase='ready'",true)
 		while JavaScriptBridge.eval("window.renderProfilePhase",true) != "running":
 			await process_frame
+	if gpu_probe: gpu_probe.start(name, true)
 	var times: Array[float] = []
 	var draws := 0.0
 	var primitives := 0.0
@@ -49,6 +51,7 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 		setup_cpu += RenderingServer.get_frame_setup_time_cpu()
 		render_cpu += RenderingServer.viewport_get_measured_render_time_cpu(game.get_viewport().get_viewport_rid())
 		render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(game.get_viewport().get_viewport_rid())
+	if gpu_probe: gpu_probe.stop()
 	if "--profile-steady" in OS.get_cmdline_user_args():
 		JavaScriptBridge.eval("window.renderProfilePhase='done'",true)
 		while JavaScriptBridge.eval("window.renderProfilePhase",true) != "stopped":
@@ -70,6 +73,9 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 		"render_setup_cpu_ms": setup_cpu / samples, "render_cpu_ms": render_cpu / samples,
 		"render_gpu_ms": render_gpu / samples, "zero_timing_means_unavailable": true,
 		"renderer": RenderingServer.get_current_rendering_method(), "batching": game.world.batching}
+	if gpu_probe:
+		data.gpu_timing_requested = true
+		data.gpu_timing = await gpu_probe.collect(self)
 	print("RENDER_SAMPLE ", JSON.stringify(data))
 	if "--capture" in OS.get_cmdline_user_args():
 		data.png = Marshalls.raw_to_base64(root.get_texture().get_image().save_png_to_buffer())
@@ -95,6 +101,7 @@ func run() -> void:
 	camera.fov = 75
 	camera.far = 200
 	camera.current = true
+	if "--gpu-timing" in OS.get_cmdline_user_args(): gpu_probe = load("res://_gpu_profile.gd").new()
 	for bot in game.bots:
 		bot.position = game.Layout.on_floor(Vector3(-3 + (bot.index % 3) * 3, 0, -25 + (bot.index / 3) * 3))
 	for light in game.world.find_children("*","Light3D",true,false):
@@ -124,4 +131,5 @@ func run() -> void:
 				await capture(pose[0]+"-"+mode,pose[1],pose[2])
 		else: await capture(pose[0],pose[1],pose[2])
 	print("RENDER_BENCHMARK_OK")
+	if gpu_probe: gpu_probe.dispose()
 	JavaScriptBridge.eval("window.mapReviewComplete = true",true)

@@ -19,8 +19,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
   const presentationAbba = process.argv.includes('--presentation-abba');
+  const gpuTiming = process.argv.includes('--gpu-timing');
   assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
   assert.ok(!presentationAbba || (gameplayProfile && !navigationAbba),'Presentation ABBA requires --gameplay-profile without --navigation-abba');
+  assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
+    'GPU timing requires an isolated benchmark or gameplay profile without other experiments');
   assert.ok([benchmark,wallReview,gameplayProfile].filter(Boolean).length <= 1,'Choose one review/profile mode');
   const longFixture = benchmark || wallReview || gameplayProfile;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
@@ -82,12 +85,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
     fs.mkdirSync(release);
   }
   fs.writeFileSync(path.join(reviewProject,'export_presets.cfg'),presets);
+  if (gpuTiming) fs.copyFileSync(path.join(__dirname,'gpu_profile.gd'),path.join(reviewProject,'_gpu_profile.gd'));
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
   let reviewScript = fs.readFileSync(path.join(__dirname,gameplayProfile ? 'gameplay_profile.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
+    .replaceAll('gpu_probe.collect(self)','gpu_probe.collect(get_tree())')
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
   if (gameplayProfile) reviewScript=reviewScript
@@ -119,6 +124,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (steadyProfile) args.push('--profile-steady');
   if (navigationAbba) args.push('--navigation-abba');
   if (presentationAbba) args.push('--presentation-abba');
+  if (gpuTiming) args.push('--gpu-timing');
   for (const arg of process.argv.slice(2))
     if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
@@ -151,6 +157,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
     if (presentationAbba) await page.addInitScript({path:path.join(project,'engine/experiments/presentation-state-cache.js')});
+    if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (windowsRenderOnly) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
@@ -209,13 +216,36 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
     const expectedWalls=['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
       'door-near','door-far','player-reported'];
-    const expectedGameplay = presentationAbba ? ['native-before','cache-before','cache-after','native-after']
+    const expectedGameplay = gpuTiming ? ['timer-off-before','timer-on-before','timer-on-after','timer-off-after']
+      : presentationAbba ? ['native-before','cache-before','cache-after','native-after']
       : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
       : ['control-before','profile-before','profile-after','control-after'];
     assert.deepEqual(captures.map(c => c.name),gameplayProfile ? expectedGameplay : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
     if (gameplayProfile) for (const capture of captures) assert.deepEqual(capture.camera,captures[0].camera,'All windows use an identical observer camera');
     for (const capture of captures) {
       assert.match(capture.name,/^[a-z-]+$/);
+      if (gpuTiming) {
+        const gpu=capture.gpu_timing;
+        assert.ok(gpu && typeof gpu.supported === 'boolean','GPU probe reports availability and sample state');
+        assert.equal(capture.gpu_timing_requested,benchmark || capture.name.startsWith('timer-on-'));
+        assert.equal(gpu.enabled,false,'Sampling stops before summaries and captures');
+        assert.equal(gpu.active,false,'No query straddles segment boundaries');
+        assert.equal(gpu.stats.errors,0,gpu.last_error || 'No probe exceptions');
+        assert.equal(gpu.allocated_queries <= gpu.config.poolSize,true,'Query storage stays bounded');
+        assert.equal(gpu.valid_samples,gpu.samples.length);
+        if (!gpu.supported || !capture.gpu_timing_requested) {
+          assert.equal(gpu.valid_samples,0,'Disabled/unsupported queries cannot report measured GPU work');
+          assert.equal(gpu.mean_ms,null,'Missing measurements are not zero milliseconds');
+        }
+        if (gpu.valid_samples) {
+          assert.ok(Number.isFinite(gpu.mean_ms) && gpu.mean_ms >= 0);
+          for (const sample of gpu.samples) {
+            assert.equal(sample.segment_id,capture.name,'No samples leak between segments');
+            assert.ok(Number.isFinite(sample.elapsed_ms) && sample.elapsed_ms >= 0);
+          }
+        }
+        assert.equal(gpu.stats.blitCalls,gpu.stats.blitsInQuery+gpu.stats.blitsOutsideQuery);
+      }
       if (wallReview) {
         assert.equal(capture.weapon_clear,true,`${capture.name}: whole weapon clears static geometry`);
         assert.ok(Number.isFinite(capture.weapon_withdrawal));

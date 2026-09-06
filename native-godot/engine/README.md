@@ -9,10 +9,17 @@ retains its upstream MIT license and third-party notices.
 [Godot 4.7.2 source](https://github.com/godotengine/godot/tree/4.7.2-stable).
 It validates framebuffer completeness on allocation/attachment changes instead
 of repeating the query on every frame. Allocation, texture contents, rendering,
-bind/unbind operations and error handling remain unchanged. Reconfiguration clears
+bind/unbind operations and allocation-time completeness handling remain unchanged.
+Normal viewport reconfiguration clears
 the IDs, so resizing and changing MSAA/format/view count require validation again.
 Adding color to a depth-only buffer also validates. This does not add context-loss
-recovery. Future attachment-storage mutations must invalidate this assumption.
+recovery: unlike the original repeated query, it does not detect incompleteness
+after successful allocation without an attachment change. The existing Web loss
+handler requests reload, not recovery. Future attachment-storage mutations or
+context restoration must invalidate this assumption. `configure_for_probe()`
+does not clear IDs, but its only current caller uses a freshly allocated object;
+reuse would need separate validation. "Unchanged storage" is a current source
+invariant, not immutable GL storage enforced by the API.
 
 ## Reproducible comparison
 

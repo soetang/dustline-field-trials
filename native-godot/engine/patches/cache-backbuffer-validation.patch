@@ -4,7 +4,7 @@
  void RenderSceneBuffersGLES3::check_backbuffer(bool p_need_color, bool p_need_depth) {
  	GLES3::TextureStorage *texture_storage = GLES3::TextureStorage::get_singleton();
  
-+	// Storage is immutable between allocations. Recheck only when the framebuffer
++	// Storage is unchanged between allocations. Recheck only when the framebuffer
 +	// or an attachment is created; configure() clears all IDs on reconfiguration.
 +	const bool needs_check = backbuffer3d.fbo == 0 ||
 +			(p_need_color && backbuffer3d.color == 0) ||
