@@ -34,8 +34,6 @@ bash native-godot/tools/setup.sh --web
 bash native-godot/tools/check.sh
 bash native-godot/tools/build-web.sh
 node native-godot/tests/browser.js
-# On a Windows/WSL host, test with isolated hardware-accelerated Windows Chrome:
-DUSTLINE_WINDOWS_BROWSER=1 node native-godot/tests/browser.js
 ```
 
 The first setup downloads the official export-template archive (about 1.2 GiB,
@@ -55,6 +53,12 @@ and avoids headless pointer warps; it never changes game state or its clock.
 The export also has an allowlist, SHA-256 file manifest and size budgets.
 The audio meter accumulates real output peaks in an AudioWorklet, so slow
 software-rendered frames cannot hide a short sound between main-thread polls.
+
+Automation defaults to Linux headless Chrome, disconnected from the desktop's
+X11/Wayland display, so tests cannot trap your mouse. Its FPS is not a hardware
+benchmark. Windows headless Chrome can still confine the host cursor; that
+runner is blocked unless a tester explicitly sets both
+`DUSTLINE_WINDOWS_BROWSER=1` and `DUSTLINE_ALLOW_HOST_INPUT=1`.
 
 In the browser, **F8 downloads a PNG**. **Escape → Copy feedback details** opens
 a selectable/copyable text panel; no clipboard permission is required just to
