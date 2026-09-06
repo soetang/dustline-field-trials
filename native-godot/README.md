@@ -27,6 +27,27 @@ targets add sideways tracking error rather than a larger headshot lottery.
 Weapon damage and headshot multipliers are unchanged, and both bot teams use
 the same rules. Standing in an open firing lane is still dangerous.
 
+Courtyard 0.4 replaces the rigid operator limbs with original Blender-skinned
+models and procedural skeletal animation. Elbows and knees bend; walking,
+running, backing up and strafing use movement-driven steps. Both hands follow
+the weapon when aiming or firing, and the support hand reaches toward the
+magazine during reloads. Head/torso aim and breathing add small idle movement.
+This is an early animation pass, not motion capture or a finished character set;
+turn-in-place foot planting and slope-specific foot placement still need work.
+
+Each operator uses one mesh, three material surfaces and 18 bones: CT has
+4,312 triangles / 243,476 bytes, T has 4,224 triangles / 240,712 bytes, versus
+9,208 triangles / about 488 KB each before. There are no character image textures,
+downloaded animation clips or extra physics rays. This reduces asset storage
+and geometry, but skeletal updates add CPU work; these figures are not an FPS
+or whole-game RAM claim. The older Rust browser models are unchanged.
+
+Rebuild the editable, original MIT character assets with Blender 4.5:
+
+```sh
+blender --background --python native-godot/tools/make_operators.py
+```
+
 From the repository root:
 
 ```sh
@@ -182,7 +203,7 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks, 12 input checks,
+The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks, 60 operator checks, 12 input checks,
 33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse
@@ -212,6 +233,14 @@ collision, weapon spread/recoil/reload, economy, blocked shots/sight, objective
 ownership, generated PCM sound and a live bot round. Both error logs and the
 test sentinel are checked because Godot can return exit 0 after a script error.
 This is correctness testing, **not a GPU performance benchmark**.
+
+The operator suite checks normalized skin weights, bone/material budgets, finite
+poses, fixed limb lengths, foot-height bounds, weapon-hand contact, reload reach,
+braking and death poses. `tests/operator_gallery.gd` renders a neutral two-unit
+study from five angles plus stride/reload poses; these are asset-review images,
+not live gameplay. `bash native-godot/tools/render-background.sh --label=review`
+uses a private Xvfb display (requires Xvfb/xkbcomp), with no desktop fallback.
+Software-rendered screenshots are useful for pose review, not hardware FPS.
 
 `tests/visual.gd` runs a native renderer smoke test and saves labelled staged
 views under `builds/captures`. It exercises movement, shooting and reloading;
