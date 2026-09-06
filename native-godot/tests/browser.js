@@ -55,6 +55,24 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     page.setDefaultTimeout(30000);
     await page.addInitScript(() => {
+      // Read the actual engine's committed linear-memory capacity. This is
+      // not process RAM (it excludes JS/browser/GPU allocations); never report
+      // an unavailable release-build Performance counter as zero-byte memory.
+      window.courtyardWasmMemories = new Set();
+      for (const name of ['instantiate','instantiateStreaming']) {
+        const original = WebAssembly[name];
+        if (!original) continue;
+        WebAssembly[name] = async function(...args) {
+          const result = await original.apply(this,args);
+          const instance = result.instance || result;
+          for (const value of Object.values(instance.exports || {}))
+            if (value instanceof WebAssembly.Memory) window.courtyardWasmMemories.add(value);
+          for (const module of Object.values(args[1] || {}))
+            for (const value of Object.values(module))
+              if (value instanceof WebAssembly.Memory) window.courtyardWasmMemories.add(value);
+          return result;
+        };
+      }
       // Avoid headless pointer-lock recenter warps; explicit relative look below.
       document.addEventListener('mousemove', e => { if (e.isTrusted) e.stopImmediatePropagation(); }, true);
       document.addEventListener('pointermove', e => { if (e.isTrusted && e.pointerType === 'mouse') e.stopImmediatePropagation(); }, true);
@@ -115,7 +133,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
     await page.waitForFunction(() => window.courtyardState, null, {timeout:120000});
     await page.locator('#loading').waitFor({state:'hidden'});
     const get = () => page.evaluate(() => window.courtyardState);
+    const memory = () => page.evaluate(() => [...window.courtyardWasmMemories].map(m => m.buffer.byteLength));
     let state = await get();
+    const startupMemory = await memory();
+    assert.ok(startupMemory.some(bytes => bytes > 0), 'Must observe real engine memory, not a zero/unsupported counter');
     console.log('Startup:', state);
     assert.equal(state.renderer, 'gl_compatibility');
     assert.equal(state.paused, true);
@@ -189,6 +210,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => !window.courtyardState.paused && document.pointerLockElement?.id === 'canvas');
     assert.deepEqual(failures, [], 'Browser runtime or network errors');
+    const memoryReport = {kind:'WebAssembly linear-memory capacity, NOT total process RAM', startupBytes:startupMemory, afterPlayBytes:await memory()};
+    fs.writeFileSync(path.join(artifacts,'memory.json'),JSON.stringify(memoryReport,null,2)+'\n');
+    console.log('Engine memory:', memoryReport);
     console.log('PASS: exported browser startup, buy freeze, move/look/fire/reload, audio, screenshot download, pause/resume.');
   } catch (error) {
     if (page && !page.isClosed()) {

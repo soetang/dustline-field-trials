@@ -62,7 +62,7 @@ development tools only, never published). Builds are separate candidates under
 `builds/web-releases/`; `builds/web-candidate.txt` selects the latest export.
 No desktop executable, desktop release pointer or existing browser game is replaced.
 Serve the candidate directory over HTTP, not `file://`, to play locally.
-The first export is about 46.3 MiB uncompressed, or 17.9 MiB using local gzip;
+The 0.4 export is about 45.9 MiB uncompressed, or 17.5 MiB using local gzip;
 actual HTTP transfer depends on the host. Engine and game pack URLs are pinned
 to one immutable release to avoid mixing cached builds.
 
@@ -74,6 +74,10 @@ and avoids headless pointer warps; it never changes game state or its clock.
 The export also has an allowlist, SHA-256 file manifest and size budgets.
 The audio meter accumulates real output peaks in an AudioWorklet, so slow
 software-rendered frames cannot hide a short sound between main-thread polls.
+The test also records actual WebAssembly linear-memory capacity in `memory.json`.
+The local 0.4 sample held at 66.5 MiB from startup through the short playtest;
+that excludes JS, browser, GPU and other process allocations and is **not total
+RAM usage**. Export size and this heap measurement must not be conflated.
 
 Automation defaults to Linux headless Chrome, disconnected from the desktop's
 X11/Wayland display, so tests cannot trap your mouse. Its FPS is not a hardware
