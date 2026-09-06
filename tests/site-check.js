@@ -32,4 +32,11 @@ if (exists('watch.html')) {
   assert.equal(clip.readUInt32BE(0),0x1a45dfa3,'Video must be an actual WebM container');
   assert.ok(clip.length>10000 && clip.length<20*1024*1024);
 }
-console.log('Static export verified: project-relative URLs, one release, approved assets/notices, classic fallback, and media when present.');
+const courtyardHtml = fs.readFileSync(path.join(root,'courtyard/index.html'),'utf8');
+const courtyardRelease = courtyardHtml.match(/<base href="\.\/(courtyard-[\w-]+)\/">/)[1];
+assert.deepEqual(fs.readdirSync(path.join(root,'courtyard')).sort(),[courtyardRelease,'index.html'].sort());
+require('../native-godot/tools/web-release').verify(path.join(root,'courtyard',courtyardRelease));
+const base = new URL(`./${courtyardRelease}/`,'https://example.github.io/dustline-field-trials/courtyard/');
+assert.equal(new URL('../../',base).pathname,'/dustline-field-trials/','Courtyard fallback must return to the original game');
+assert.equal(courtyardHtml,fs.readFileSync(path.join(root,'courtyard',courtyardRelease,'index.html'),'utf8').replace('<head>',`<head>\n  <base href="./${courtyardRelease}/">`),'Stable entry must pin the exact tested shell to its release');
+console.log('Static export verified: original browser/mobile game, classic fallback, media, and one manifest-verified Courtyard release at a separate path.');

@@ -4,9 +4,11 @@ An experimental **Sol + Astra run**: a browser tactical FPS inspired by
 **Counter-Strike**, built with Rust, WebAssembly, Bevy and Blender.
 An independent AI-assisted development experiment—not affiliated with Valve.
 
-A separate **open-source native desktop version** is being developed in
-[native-godot](native-godot/README.md), using Godot and one original
-Dust2-inspired map. It does not replace this browser game.
+A separate **open-source Godot edition**, with one original Dust2-inspired map,
+has both a [native desktop version](native-godot/README.md) and a new
+**[Courtyard browser preview](https://soetang.github.io/dustline-field-trials/courtyard/)**.
+The Courtyard preview currently needs a keyboard and mouse. It does not replace
+the original desktop/mobile browser game described below.
 
 **[Play in your browser](https://soetang.github.io/dustline-field-trials/)** ·
 [Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905) ·
@@ -156,10 +158,16 @@ the public links. The first build compiles Bevy; subsequent builds use a cache.
 Release builds omit Wasm debug names; use `KEEP_WASM_NAMES=1 npm run build` when
 readable engine stack traces are needed locally.
 
-`node scripts/export-site.js` creates `_site` containing one verified release,
-allowlisted assets, media and license notices. If `_site` exists, move it aside
-before exporting again. The website root opens the 3D client and `classic.html`
-opens the earlier prototype. No backend is required.
+Before exporting locally, build Courtyard too: run
+`bash native-godot/tools/setup.sh --web`, then
+`bash native-godot/tools/build-web.sh` (see its README for verification).
+`node scripts/export-site.js` creates `_site` containing one verified Rust release,
+one separately versioned Godot release, allowlisted assets, media and license
+notices. If `_site` exists, move it aside before exporting again. The website root
+opens the existing desktop/mobile 3D client, `courtyard/` opens the keyboard/mouse
+Godot preview, and `classic.html` opens the earlier prototype. No backend is
+required. CI builds both games and runs the exported Courtyard browser playtest
+before deploying; a failing build leaves the previous site live.
 
 After installing Playwright and exporting the site, `node scripts/capture-gameplay.js`
 captures actual browser screenshots and a raw silent recording, testing assets

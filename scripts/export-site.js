@@ -46,6 +46,9 @@ for (const [name, group] of Object.entries(assets)) {
   }
 }
 fs.writeFileSync(path.join(out,'.nojekyll'),'');
+// Courtyard is a separate game path. Never replace the existing desktop/mobile
+// browser entry; export its independently verified Godot bundle alongside it.
+require('../native-godot/tools/export-web-site');
 function bytes(dir) { return fs.readdirSync(dir,{withFileTypes:true}).reduce((sum,f) => sum + (f.isDirectory()? bytes(path.join(dir,f.name)):fs.statSync(path.join(dir,f.name)).size),0); }
 const size = bytes(out);
 if (size > 900 * 1024 * 1024) throw new Error('Website exceeds safety budget');

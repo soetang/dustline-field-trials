@@ -2,9 +2,6 @@ name: Build and publish playable game
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'native-godot/**'
-      - '.github/workflows/native.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +17,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .tools/godot/4.7.2
+          key: godot-web-4.7.2-sha512
+      - name: Install verified open-source Godot and single-thread web template
+        run: bash native-godot/tools/setup.sh --web
+      - name: Verify and build the separate Courtyard browser preview
+        run: |
+          bash native-godot/tools/check.sh
+          bash native-godot/tools/build-web.sh
       - uses: actions/cache@v4
         with:
           path: |
@@ -45,6 +53,20 @@ jobs:
         run: |
           node scripts/export-site.js
           node tests/site-check.js
+      - name: Playtest the exported Courtyard page before deployment
+        env:
+          TEST_DPR: '0.4'
+        run: |
+          npx playwright install --with-deps chromium
+          node native-godot/tests/browser.js --exported
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: courtyard-browser-checks
+          path: |
+            artifacts/courtyard-browser-*/
+            artifacts/godot-check-*/
+            artifacts/godot-web-*/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
