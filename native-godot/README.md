@@ -169,7 +169,7 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The native suites include **114 core checks, 47 tactical checks, 12 input checks,
+The shared game suites include **118 core checks, 47 tactical checks, 12 input checks,
 33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.
 The tactical tests cover carrier death/recovery, plant interruption, human defuse
@@ -188,6 +188,10 @@ gunfire, correct stereo panning, reduced signal through a wall and silence when
 muted (four checks). This captures only the game's mixer, never a microphone or
 other applications. The fast audio suite checks bounded voice reuse, distance
 culling, source placement, pause and spectator listener ownership.
+Four render-batching checks cover instance counts, collision-body preservation
+and transformed box corners. The initial map groups 1,296 static box details
+into 279 local batches while preserving all 47 static collision bodies. Those
+are scene counts, not a claim about final draw calls or FPS.
 
 Runs Godot's actual importer, then a fast fixed-timestep headless integration
 suite: all key map routes, body clearance, buy freeze, real input movement,
