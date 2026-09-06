@@ -27,6 +27,14 @@ targets add sideways tracking error rather than a larger headshot lottery.
 Weapon damage and headshot multipliers are unchanged, and both bot teams use
 the same rules. Standing in an open firing lane is still dangerous.
 
+Version 0.4.2 further reduces accidental opening headshots. Body-focused bursts
+aim lower, compensate for shooting down at a capsule from a ledge, and distribute
+more error sideways than upward. First-contact sideways aim needs time to settle;
+occasional precision bursts after sustained exposure remain. Player weapon spread
+and all damage/headshot rules are unchanged. Twenty seeded rifle scenarios cover
+standing/crouched targets at 5–50 m and height differences: 12,000 opening bursts,
+36,000 actual bot-fired rays. These controlled samples are not human match results.
+
 Courtyard 0.4 replaces the rigid operator limbs with original Blender-skinned
 models and procedural skeletal animation. Elbows and knees bend; walking,
 running, backing up and strafing use movement-driven steps. Both hands follow
@@ -227,7 +235,7 @@ game—are left intact. The export-template archive is not shipped with the game
 Export templates and the native engine have already been installed on the
 configured local machine. No Unreal/Epic software was installed.
 
-The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks,
+The shared game suites include **118 core checks, 47 tactical checks, 20 aim checks, 60 opening-encounter checks,
 60 operator checks, 30 ground-foot checks, 26 map-update checks, 12 input checks,
 33 combat/spectator checks, 15 audio checks and four complete
 seeded 5v5 rounds** with a bot replacing the human for equal-team observation.

@@ -11,7 +11,7 @@ const Objective = preload("res://scripts/objective.gd")
 const Combat = preload("res://scripts/combat.gd")
 const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
-const BUILD := "courtyard-0.4.1-undercroft"
+const BUILD := "courtyard-0.4.2-encounters"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -267,8 +267,8 @@ func actors() -> Array[Node3D]:
 	for bot in bots: result.append(bot)
 	return result
 
-func fire_shot(shooter: Node3D, from: Vector3, direction: Vector3, slot: int, spread: float) -> Dictionary:
-	var ray := Weapons.direction_with_spread(direction, spread, rng)
+func fire_shot(shooter: Node3D, from: Vector3, direction: Vector3, slot: int, spread: float, vertical_scale: float = 1.0) -> Dictionary:
+	var ray := Weapons.direction_with_spread(direction, spread, rng, vertical_scale)
 	var query := PhysicsRayQueryParameters3D.create(from, from + ray * 140, 7, [shooter.get_rid()])
 	var result := get_world_3d().direct_space_state.intersect_ray(query)
 	var end: Vector3 = result.position if not result.is_empty() else from + ray * 90

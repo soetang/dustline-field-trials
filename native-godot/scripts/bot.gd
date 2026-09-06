@@ -259,7 +259,7 @@ func shoot() -> bool:
 		tracking_sample = rng.randf_range(-1, 1)
 	var precise := higher_aim and Aim.higher_aim_allowed(contact_age, shooter_speed, target_speed, distance)
 	var crouched: bool = target == game.player and game.player.crouched
-	var aim: Vector3 = target.global_position + Vector3.UP * Aim.aim_height(crouched, precise, aim_sample)
+	var aim := Aim.aim_point(eye(),target.global_position,crouched,precise,aim_sample)
 	var lateral: Vector3 = (aim - eye()).cross(Vector3.UP).normalized()
 	aim += lateral * Aim.lateral_error(contact_age, target_speed, distance, tracking_sample)
 	var direction := (aim - eye()).normalized()
@@ -273,7 +273,7 @@ func shoot() -> bool:
 		think_left = 0
 		return false
 	blocked_fire = 0
-	game.fire_shot(self, eye(), direction, slot, Aim.spread(slot, contact_age, shooter_speed, burst_shots))
+	game.fire_shot(self, eye(), direction, slot, Aim.spread(slot, contact_age, shooter_speed, burst_shots), Aim.vertical_scale(precise))
 	shots += 1
 	ammo -= 1
 	cooldown = Weapons.SPECS[slot].interval

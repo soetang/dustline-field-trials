@@ -26,10 +26,10 @@ static func kick(slot: int, shot: int) -> Vector2:
 	var spec: Dictionary = SPECS[slot]
 	return Vector2(deg_to_rad(spec.kick), deg_to_rad(sin(float(shot) * 1.7) * float(spec.kick) * minf(0.75, shot * 0.09)))
 
-static func direction_with_spread(direction: Vector3, radians: float, rng: RandomNumberGenerator) -> Vector3:
+static func direction_with_spread(direction: Vector3, radians: float, rng: RandomNumberGenerator, vertical_scale: float = 1.0) -> Vector3:
 	var right := direction.cross(Vector3.UP).normalized()
 	if right.length_squared() < 0.1: right = Vector3.RIGHT
 	var up := right.cross(direction).normalized()
 	var angle := rng.randf() * TAU
 	var radius := sqrt(rng.randf()) * tan(radians)
-	return (direction + right * cos(angle) * radius + up * sin(angle) * radius).normalized()
+	return (direction + right * cos(angle) * radius + up * sin(angle) * radius * vertical_scale).normalized()

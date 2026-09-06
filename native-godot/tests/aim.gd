@@ -47,7 +47,7 @@ func measure(crouched: bool, old: bool, settled: bool, moving: bool = false) -> 
 		var aim: Vector3 = game.player.position + Vector3.UP * height
 		if not old: aim.x += Aim.lateral_error(age, 4.5 if moving else 0, 18, track)
 		game.player.health = 1000
-		var result: Dictionary = game.fire_shot(shooter, shooter.eye(), (aim - shooter.eye()).normalized(), 1, spread)
+		var result: Dictionary = game.fire_shot(shooter, shooter.eye(), (aim - shooter.eye()).normalized(), 1, spread, 1.0 if old else Aim.vertical_scale(high))
 		if result.get("collider") == game.player:
 			hits += 1
 			damage += 1000 - game.player.health
