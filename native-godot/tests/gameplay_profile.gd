@@ -8,6 +8,7 @@ const LABELS: Array[String] = [] # Injected by the temporary-project runner.
 var game: Node3D
 var observer := Camera3D.new()
 var duration := 12.0
+var warmup := 30
 var resolution := Vector2i(1280, 720)
 
 func _initialize() -> void:
@@ -33,7 +34,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	pin_observer()
 	# Sync new CharacterBodies and settle the existing render materials while
 	# paused. This setup/import/round-allocation work is outside the measurement.
-	for frame in 30: await RenderingServer.frame_post_draw
+	for frame in warmup: await RenderingServer.frame_post_draw
 	if "--profile-steady" in OS.get_cmdline_user_args():
 		JavaScriptBridge.eval("window.renderProfileName=" + JSON.stringify(name) + "; window.renderProfilePhase='ready'", true)
 		while JavaScriptBridge.eval("window.renderProfilePhase", true) != "running":
@@ -50,7 +51,11 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	var draws := 0.0
 	var primitives := 0.0
 	var camera_mismatches := 0
-	while (Time.get_ticks_usec() - started) < duration * 1000000 and Probe.frame_count < Probe.FRAME_CAPACITY:
+	# A slow software renderer may produce fewer than twelve frames in a short
+	# diagnostic window. Extend it rather than fabricating samples or weakening
+	# validation; actual wall duration remains in the report and watchdog bounds
+	# a renderer that never produces another frame.
+	while ((Time.get_ticks_usec() - started) < duration * 1000000 or Probe.frame_count < 12) and Probe.frame_count < Probe.FRAME_CAPACITY:
 		await RenderingServer.frame_post_draw
 		if not observer.current: camera_mismatches += 1
 		var now := Time.get_ticks_usec()
@@ -82,6 +87,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 			"rotation": [observer.global_rotation.x, observer.global_rotation.y, observer.global_rotation.z], "fov": observer.fov,
 			"mismatched_frames": camera_mismatches},
 		"instrumented": recording, "seed": game.match_seed,
+		"requested_seconds": duration, "minimum_frames": 12, "warmup_frames": warmup,
 		"wrapper_control": "disabled controls still include wrapper dispatch/branch; not pristine source",
 		"elapsed_wall_seconds": (previous - started) / 1000000.0,
 		"elapsed_game_seconds": game.elapsed, "physics_ticks": physics_end - physics_start,
@@ -107,6 +113,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--duration="): duration = clampf(arg.get_slice("=", 1).to_float(), 3, 30)
+		if arg.begins_with("--warmup="): warmup = clampi(arg.get_slice("=", 1).to_int(), 3, 600)
 		if arg.begins_with("--width="): resolution.x = clampi(arg.get_slice("=", 1).to_int(), 320, 3840)
 		if arg.begins_with("--height="): resolution.y = clampi(arg.get_slice("=", 1).to_int(), 180, 2160)
 	root.size = resolution

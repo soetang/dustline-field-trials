@@ -38,7 +38,7 @@ jobs:
           case "$REVIEW_SCENE" in
             map) node native-godot/tests/map-review-browser.js ;;
             walls) node native-godot/tests/map-review-browser.js --wall-review ;;
-            cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --width=640 --height=360 ;;
+            cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
             *) exit 1 ;;
           esac
       - uses: actions/upload-artifact@v4

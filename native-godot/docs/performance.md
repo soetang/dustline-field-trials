@@ -325,6 +325,10 @@ for five views, `scene=walls` for twelve wall checks, or `scene=cpu` for a short
 fixed-camera profiling-fixture check. Download that run's screenshot/JSON/log
 artifact. Its software renderer is for correctness and visual review, never
 hardware performance claims. It has no Pages write/deployment permission.
+The short CPU-fixture CI mode uses three warmup frames; normal profiling defaults
+to thirty. Gameplay windows collect at least twelve real frames, extending a
+short requested duration on very slow software renderers. Actual wall duration,
+requested duration and warmup count are recorded; no missing frames are invented.
 
 Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` changes
 only the temporary benchmark project. Test resources, profiles and documentation
