@@ -13,7 +13,7 @@ const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
 const FrameMetrics = preload("res://scripts/frame_metrics.gd")
 const RenderBudget = preload("res://scripts/render_budget.gd")
-const BUILD := "courtyard-0.4.7-repeek-focus"
+const BUILD := "courtyard-0.4.8-view-diagnostics"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -387,8 +387,23 @@ func notify(message: String, seconds: float = 2.5) -> void:
 	banner = message
 	banner_left = seconds
 
+func camera_details() -> Dictionary:
+	# Corpse/player coordinates do not describe the spectator's rendered view.
+	# Read the active camera, including parent transforms, recoil and zoom; no
+	# physics query, image readback, or renderer synchronization is needed.
+	var camera := get_viewport().get_camera_3d()
+	if camera == null: return {}
+	var pose := camera.get_camera_transform()
+	return {"mode": "spectator" if camera == spectator.camera else ("player" if camera == player.camera else "other"),
+		"position_xyz": [pose.origin.x, pose.origin.y, pose.origin.z],
+		"basis": [[pose.basis.x.x, pose.basis.x.y, pose.basis.x.z],
+			[pose.basis.y.x, pose.basis.y.y, pose.basis.y.z],
+			[pose.basis.z.x, pose.basis.z.y, pose.basis.z.z]],
+		"fov_degrees": camera.fov, "near": camera.near, "far": camera.far,
+		"keep_aspect": camera.keep_aspect}
+
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "recent_live_frames": frame_metrics.cached, "render": render_budget.details(get_viewport()), "scene_nodes": get_tree().get_node_count(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "weapon_wall": {"withdrawal": player.weapon_clearance.amount, "clear": player.weapon_clearance.clear, "queries": player.weapon_clearance.queries}, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "recent_live_frames": frame_metrics.cached, "render": render_budget.details(get_viewport()), "scene_nodes": get_tree().get_node_count(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "camera": camera_details(), "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "weapon_wall": {"withdrawal": player.weapon_clearance.amount, "clear": player.weapon_clearance.clear, "queries": player.weapon_clearance.queries}, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return

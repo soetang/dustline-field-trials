@@ -67,6 +67,59 @@ func check_render_dimensions() -> void:
 	check(subviewport.scaling_3d_scale == 0.5 and budget.level == 2,"Reading details does not mutate render state")
 	subviewport.free()
 
+func vector_from(values: Array) -> Vector3:
+	return Vector3(values[0],values[1],values[2])
+
+func check_camera_pose(details: Dictionary, camera: Camera3D, label: String) -> void:
+	var pose := camera.get_camera_transform()
+	check(vector_from(details.position_xyz).is_equal_approx(pose.origin),label + " position includes camera/parent offsets")
+	var columns: Array = details.basis
+	var basis := Basis(vector_from(columns[0]),vector_from(columns[1]),vector_from(columns[2]))
+	check(basis.is_equal_approx(pose.basis),label + " basis reconstructs the full view orientation")
+	check(is_equal_approx(details.fov_degrees,camera.fov) and is_equal_approx(details.near,camera.near) and is_equal_approx(details.far,camera.far) and details.keep_aspect == camera.keep_aspect,label + " preserves lens parameters")
+
+func check_camera_feedback(game: Node3D) -> void:
+	# Paused fixture: exercise actual camera ownership without rendering or input.
+	var player_pose: Transform3D = game.player.transform
+	var camera: Camera3D = game.player.camera
+	var camera_pose := camera.transform
+	var fov := camera.fov
+	game.player.position = Vector3(9.65,1.57,-30.65)
+	game.player.rotation.y = -1.98
+	camera.rotation = Vector3(-0.13,0.02,0.01)
+	camera.fov = 30
+	var details: Dictionary = JSON.parse_string(game.details())
+	check(details.camera.mode == "player","Living feedback uses the active player camera")
+	check_camera_pose(details.camera,camera,"Player zoom/recoil")
+	check(vector_from(details.position_xyz).is_equal_approx(game.player.position),"Existing feedback keeps player body coordinates")
+	check(not vector_from(details.camera.position_xyz).is_equal_approx(game.player.position),"Camera is not confused with the player body")
+	var health: float = game.player.health
+	game.player.health = 0
+	game.spectator.select_target()
+	camera = game.spectator.camera
+	camera.position = Vector3(-24,3.2,-34)
+	camera.look_at(Vector3(-20,1.5,-29))
+	var before := camera.get_camera_transform()
+	details = JSON.parse_string(game.details())
+	check(details.camera.mode == "spectator" and not details.spectating.is_empty(),"Dead-player feedback identifies the current spectator camera")
+	check_camera_pose(details.camera,camera,"Spectator")
+	check(vector_from(details.position_xyz).is_equal_approx(game.player.position),"Spectating preserves separate corpse coordinates")
+	check(camera.get_camera_transform().is_equal_approx(before) and camera.is_current(),"Reading feedback does not move or switch the camera")
+	game.spectator.reset()
+	check(JSON.parse_string(game.details()).camera.mode == "player","Round reset restores player camera feedback")
+	# No active camera is valid during view teardown. Do not select one implicitly.
+	game.spectator.remove_child(camera)
+	var head: Node = game.player.camera.get_parent()
+	head.remove_child(game.player.camera)
+	check(game.camera_details().is_empty(),"Missing active camera safely reports no pose")
+	game.spectator.add_child(camera)
+	head.add_child(game.player.camera)
+	game.player.transform = player_pose
+	game.player.camera.transform = camera_pose
+	game.player.camera.fov = fov
+	game.player.health = health
+	game.player.camera.make_current()
+
 func run() -> void:
 	check_render_dimensions()
 	var metrics := Metrics.new()
@@ -93,6 +146,7 @@ func run() -> void:
 	root.add_child(game)
 	current_scene = game
 	for i in 3: await process_frame
+	check_camera_feedback(game)
 	check(game.render_budget.level == 2,"High is the default on every platform")
 	check(game.get_viewport().scaling_3d_scale == 1.0,"Default does not reduce rendering resolution")
 	check(game.world.find_children("*","WorldEnvironment",true,false)[0].environment.ssao_enabled,"Default retains ambient occlusion")
