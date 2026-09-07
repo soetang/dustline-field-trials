@@ -280,7 +280,7 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 		flash.visible = flash.visible and weapon_clearance.clear
 	for i in 2:
 		var hand := gun_delta * rest[arms[i].end]
-		if i == 0 and reload_blend > 0:
+		if i == 0 and reload_blend > 0 and not dead:
 			# Support hand reaches toward the magazine, trigger hand stays on grip.
 			var reload_reach := sin(clampf(reload_left / 2.2, 0, 1) * PI) * reload_blend
 			hand.origin = hand.origin.lerp(gun_delta * Vector3(0.13, 1.20, -0.335), reload_reach)

@@ -108,7 +108,15 @@ func run() -> void:
 		rig.on_shot()
 		rig.update_pose(1.0/60,Vector3.ZERO,Vector2.ZERO,0,false,false)
 		check(rig.recoil > 0 and rig.flash.visible, team+" shot kick and muzzle flash")
-		for frame in 60: rig.update_pose(1.0/60,Vector3.ZERO,Vector2.ZERO,0,false,true)
+		var dead_grips_attached := true
+		for frame in 60:
+			# A killed bot can retain its reload timer. It must stop reaching for
+			# the magazine and keep both hands on the weapon during the fall.
+			rig.update_pose(1.0/60,Vector3.ZERO,Vector2.ZERO,1.1,false,true)
+			var gun_delta := rig.pose[rig.ids.weapon] * rig.weapon_rest_inverse
+			for arm in rig.arms:
+				dead_grips_attached = dead_grips_attached and rig.pose[arm.end].origin.distance_to(gun_delta * rig.rest[arm.end].origin) < 0.004
+		check(dead_grips_attached, team+" death interrupts magazine reach throughout the fall")
 		check(not rig.flash.visible and rig.fall == 1, team+" death settles and stops muzzle flash")
 		var started := Time.get_ticks_usec()
 		for frame in 600:
