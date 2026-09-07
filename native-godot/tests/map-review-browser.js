@@ -65,7 +65,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.mkdirSync(reviewProject);
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
-  if (hudReview) fs.copyFileSync(path.join(project,'engine/experiments/hud_retained.gd'),path.join(reviewProject,'_hud_retained.gd'));
+  if (hudReview) fs.copyFileSync(path.join(project,'tests/fixtures/hud_reference.gd'),path.join(reviewProject,'_hud_reference.gd'));
   if (operatorSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/operator_surface.gdshader'),path.join(reviewProject,'_operator_surface.gdshader'));
     const source=fs.readFileSync(path.join(project,'engine/experiments/operator_surface.gd'),'utf8');
@@ -150,7 +150,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     .replaceAll('gpu_probe.collect(self)','gpu_probe.collect(get_tree())')
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
-  if (hudReview) reviewScript=reviewScript.replace('res://engine/experiments/hud_retained.gd','res://_hud_retained.gd');
+  if (hudReview) reviewScript=reviewScript.replace('res://tests/fixtures/hud_reference.gd','res://_hud_reference.gd');
   if (gameplayProfile) reviewScript=reviewScript
     .replace('res://tests/cpu_profile.gd','res://_cpu_profile.gd')
     .replace('const LABELS: Array[String] = []',`const LABELS: Array[String] = ${JSON.stringify(instrumentation.labels)}`);
@@ -307,6 +307,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.equal(retained.render.quality,'High');
         assert.equal(retained.render.scale_3d,1);
         assert.equal(retained.render.ssao,true);
+        assert.equal(retained.render.draw_calls,reference.render.draw_calls,'Retained HUD does not add draw calls');
+        assert.equal(retained.render.primitives,reference.render.primitives,'Retained HUD preserves every primitive');
         assert.equal(reference.frames,8);
         assert.equal(retained.frames,8);
         const a=PNG.sync.read(Buffer.from(reference.png,'base64')),b=PNG.sync.read(Buffer.from(retained.png,'base64'));
@@ -400,7 +402,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.ok(capture.instrumented ? capture.instrumented_self_ms > 0 : capture.instrumented_self_ms === 0);
         for (const row of capture.scopes) {
           assert.ok(row.inclusive_ms >= row.self_ms && row.self_ms >= 0);
-          if (capture.instrumented && ['bot._physics_process','layout.segment_clear','operator_rig.update_pose','hud._draw'].includes(row.scope))
+          if (capture.instrumented && ['bot._physics_process','layout.segment_clear','operator_rig.update_pose','hud._draw','hud._draw_after_radar'].includes(row.scope))
             assert.ok(row.calls > 0,`${row.scope}: core scope exercised`);
         }
       }

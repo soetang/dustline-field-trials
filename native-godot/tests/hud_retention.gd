@@ -1,6 +1,6 @@
 extends SceneTree
 
-const Candidate = preload("res://engine/experiments/hud_retained.gd")
+const Candidate = preload("res://scripts/hud.gd")
 const Layout = preload("res://scripts/layout.gd")
 var passed := 0
 var failed := 0
@@ -98,14 +98,14 @@ func compare_commands(hud: Control, label: String) -> void:
 		check(actual.commands[-1] == ["rect", Rect2(Vector2.ZERO, hud.size), Color(0.015,0.025,0.03,0.5), true, -1.0, false], label + ": pause tint remains above the complete radar")
 
 func run() -> void:
-	# Guard the copied pre-radar portion against future baseline changes; no
-	# unrelated HUD content is silently omitted while the experiment evolves.
-	var baseline := FileAccess.get_file_as_string("res://scripts/hud.gd")
-	var candidate := FileAccess.get_file_as_string("res://engine/experiments/hud_retained.gd")
+	# Compare the production pre-radar commands with the preserved original HUD;
+	# retaining map geometry must not change unrelated content or alpha order.
+	var baseline := FileAccess.get_file_as_string("res://tests/fixtures/hud_reference.gd")
+	var candidate := FileAccess.get_file_as_string("res://scripts/hud.gd")
 	var before := baseline.split("\nfunc _draw() -> void:\n")[1].split("\tradar()\n")[0].strip_edges()
 	var retained_before := candidate.split("\nfunc _draw() -> void:\n")[1].split("\nfunc _draw_after_radar")[0].strip_edges()
 	check(before == retained_before, "All pre-radar HUD commands, including damage tint, stay byte-identical")
-	check(not baseline.contains("RetainedRadar"), "Production HUD does not opt into the experiment")
+	check(candidate.begins_with("extends Control\n") and not candidate.contains("res://tests/") and not candidate.contains("res://engine/experiments/") and not baseline.contains("RetainedRadar"), "Production HUD is standalone; original commands remain only in the reference fixture")
 	var game: Node3D = load("res://main.tscn").instantiate()
 	root.add_child(game)
 	current_scene = game

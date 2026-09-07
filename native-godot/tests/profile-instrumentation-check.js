@@ -120,11 +120,13 @@ function syntheticProject(destination) {
 }
 
 try {
-  check(() => assert.equal(LABELS.length, 21));
-  check(() => assert.deepEqual(SPECIFICATION.map(spec => spec.id), Array.from({ length: 21 }, (_, i) => i)));
+  check(() => assert.equal(LABELS.length, 23));
+  check(() => assert.deepEqual(SPECIFICATION.map(spec => spec.id), Array.from({ length: 23 }, (_, i) => i)));
   check(() => assert.equal(LABELS[17], 'sound.play_at'));
   check(() => assert.equal(LABELS[19], 'spectator._physics_process'));
   check(() => assert.equal(LABELS[20], 'hud._draw'));
+  check(() => assert.equal(LABELS[21], 'hud._draw_after_radar'));
+  check(() => assert.equal(LABELS[22], 'hud._draw_static_radar'));
   const wrapped = instrumentSource(source, scopes);
   check(() => assert.equal((wrapped.match(/const CpuProbe = preload/g) || []).length, 1));
   check(() => assert.equal((wrapped.match(/CpuProbe.begin\(/g) || []).length, scopes.length));

@@ -15,6 +15,9 @@ const LABELS = Object.freeze([
   'weapon_clearance.resolve', 'hud._process', 'browser._process',
   'sound.play_at', 'objective._physics_process', 'spectator._physics_process',
   'hud._draw',
+  // Retained radar layers draw through separate callbacks. Include both so
+  // moving work off the parent CanvasItem cannot appear as a CPU saving.
+  'hud._draw_after_radar', 'hud._draw_static_radar',
 ]);
 const SPECIFICATION = Object.freeze(LABELS.map((label, id) => {
   const [script, name] = label.split('.');

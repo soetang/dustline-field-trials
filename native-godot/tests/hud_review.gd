@@ -1,6 +1,6 @@
 extends SceneTree
 
-const RetainedHUD = preload("res://engine/experiments/hud_retained.gd")
+const ReferenceHUD = preload("res://tests/fixtures/hud_reference.gd")
 # A frozen real game, not synthetic player input or an FPS benchmark. Alternate
 # HUD implementations without changing camera, world, state or rendering.
 var game: Node3D
@@ -35,11 +35,11 @@ func run() -> void:
 	root.add_child(game)
 	current_scene = game
 	freeze(game)
-	reference = game.hud
-	reference.set_process(true)
-	retained = RetainedHUD.new()
-	retained.game = game
-	reference.get_parent().add_child(retained)
+	retained = game.hud
+	retained.set_process(true)
+	reference = ReferenceHUD.new()
+	reference.game = game
+	retained.get_parent().add_child(reference)
 	retained.visible = false
 	game.elapsed = 50
 	game.paused = false
