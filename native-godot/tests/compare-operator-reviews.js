@@ -4,8 +4,74 @@
 const assert = require('node:assert/strict');
 const KEY_POSES=['walk-first','walk-next','aim-high','reload','falling','fallen'];
 const SLEEP_NAMES=['ct-sleep-entry','ct-sleep-hold','ct-sleep-moved'];
+const DEATH_WALL_NAMES=['ct','t'].flatMap(team=>['into','oblique','parallel'].flatMap(angle=>
+  ['falling','settled'].map(phase=>`${team}-wall-death-${angle}-${phase}`)));
 const NAMES=[...['ct','t'].flatMap(team=>KEY_POSES.map(pose=>`${team}-${pose}`)),
-  'ct-squad','ct-squad-edge','ct-squad-distance',...SLEEP_NAMES];
+  'ct-squad','ct-squad-edge','ct-squad-distance',...SLEEP_NAMES,...DEATH_WALL_NAMES];
+
+function validateDeathWallStages(captures) {
+  const stages=DEATH_WALL_NAMES.map(name=>captures.find(capture=>capture.name===name));
+  assert.ok(stages.every(Boolean),'All twelve wall-death diagnostic stages are present');
+  const vector=(value,size,label)=>assert.ok(Array.isArray(value) && value.length===size && value.every(Number.isFinite),`Finite ${label}`);
+  const count=(value,label)=>assert.ok(Number.isInteger(value) && value>=0,`Nonnegative ${label}`);
+  return stages.map(capture=>{
+    const value=capture.death_wall;
+    assert.ok(value && value.schema===1,'Wall-death diagnostic schema is present');
+    const [,team,angle,phase]=capture.name.match(/^(ct|t)-wall-death-(into|oblique|parallel)-(falling|settled)$/);
+    assert.equal(value.team,team);
+    assert.equal(value.phase,phase);
+    assert.equal(value.angle_degrees,{into:0,oblique:45,parallel:90}[angle]);
+    assert.equal(value.prewarm_ticks,60,'One second of live wall contact precedes death');
+    assert.ok(Number.isFinite(value.starting_withdrawal) && value.starting_withdrawal>=0 && value.starting_withdrawal<=1,'Finite live prewarm withdrawal');
+    assert.equal(typeof value.starting_cached_clear,'boolean','Live prewarm clearance is reported');
+    assert.equal(value.death_ticks,phase==='falling' ? 8 : 60,'Deterministic actual death callbacks');
+    assert.equal(value.health,0);
+    assert.equal(value.paused,true,'No live match callbacks during death-wall captures');
+    assert.equal(typeof value.sleeping,'boolean');
+    assert.ok(Number.isFinite(value.fall) && (phase==='falling' ? value.fall>0 && value.fall<1 : value.fall===1),'Valid falling/settled model pose');
+    assert.equal(capture.companions.length,0);
+    assert.equal(capture.skin.palette_valid,true,'Actual wall-death palette is valid');
+    assert.equal(capture.skin.bones,18);
+    assert.ok([18,54].includes(capture.skin.bindings));
+    for (const field of ['poses','palette']) {
+      assert.equal(capture.skin[field].length,18);
+      for(const matrix of capture.skin[field]) vector(matrix,12,`${field} transform`);
+    }
+    vector(capture.skin.model_transform,12,'model transform');
+    assert.equal(typeof capture.weapon_clear,'boolean');
+    assert.ok(Number.isFinite(capture.weapon_withdrawal) && capture.weapon_withdrawal>=0 && capture.weapon_withdrawal<=1);
+    const wall=value.wall, capsule=value.capsule, gun=value.weapon, vertices=value.vertices;
+    assert.equal(wall.found,true,'The real map wall was found');
+    assert.equal(wall.body_class,'StaticBody3D');
+    assert.equal(wall.shape_class,'BoxShape3D');
+    vector(wall.point,3,'wall point'); vector(wall.normal,3,'wall normal'); vector(wall.shape_size,3,'wall shape');
+    vector(capture.actor_position,3,'actor position');
+    assert.ok(Math.abs(wall.point[0]+8)<0.0001 && Math.abs(wall.normal[0]-1)<0.0001,'Expected west-wall face');
+    assert.ok(wall.shape_size.every(value=>value>0));
+    assert.equal(capsule.shape_class,'CapsuleShape3D');
+    assert.ok(Math.abs(capsule.radius-0.32)<0.000001 && Math.abs(capsule.height-1.8)<0.000001,'Actual bot capsule dimensions');
+    assert.ok(Math.abs(capsule.center_distance_m-0.326)<0.00001,'Bot capsule placement, not player viewmodel distance');
+    assert.ok(Math.abs(capture.actor_position[0]-wall.point[0]-capsule.center_distance_m)<0.00001,'Capsule placement matches the captured actor');
+    assert.ok(Math.abs(capsule.wall_margin_m-0.006)<0.00001,'Six millimetres of capsule wall clearance');
+    count(capsule.overlaps,'capsule overlap count');
+    vector(gun.bounds_position,3,'gun bounds position'); vector(gun.bounds_size,3,'gun bounds size');
+    vector(gun.shape_size,3,'gun hull shape'); vector(gun.hull_transform,12,'gun hull transform');
+    vector(gun.grip_error_m,2,'two hand-grip errors');
+    assert.ok(gun.bounds_size.every(value=>value>0) && gun.grip_error_m.every(value=>value>=0));
+    for(let axis=0;axis<3;axis++) assert.ok(Math.abs(gun.shape_size[axis]-gun.bounds_size[axis]-0.11)<0.000001,'Full padded weapon hull');
+    count(gun.hull_overlaps,'weapon hull overlap count');
+    assert.equal(typeof gun.connection_clear,'boolean');
+    for(const field of ['body_count','weapon_count']) {count(vertices[field],field);assert.ok(vertices[field]>0,'Both body and weapon vertices sampled');}
+    for(const field of ['body_min_wall_m','weapon_min_wall_m']) assert.ok(Number.isFinite(vertices[field]),`Finite ${field}`);
+    assert.equal(typeof value.measurement,'string');
+    // These are diagnostics, not a claim that existing corpses obey walls or
+    // retain their grip. Keep problematic captures available for a later fix.
+    return {name:capture.name,phase,sleeping:value.sleeping,weapon_clear:capture.weapon_clear,
+      starting_withdrawal:value.starting_withdrawal,starting_cached_clear:value.starting_cached_clear,
+      capsule_overlaps:capsule.overlaps,hull_overlaps:gun.hull_overlaps,connection_clear:gun.connection_clear,
+      grip_error_m:gun.grip_error_m,body_min_wall_m:vertices.body_min_wall_m,weapon_min_wall_m:vertices.weapon_min_wall_m};
+  });
+}
 
 function validateSleepStages(captures) {
   const stages=SLEEP_NAMES.map(name=>captures.find(capture=>capture.name===name));
@@ -75,6 +141,8 @@ function compareSleepImages(captures,readImage) {
 
 function validateStages(captures) {
   assert.deepEqual(captures.map(capture=>capture.name),NAMES,'All single- and multi-rig stages captured in order');
+  for(const capture of captures.filter(capture=>!DEATH_WALL_NAMES.includes(capture.name)))
+    assert.equal(capture.death_wall,undefined,'Wall-death metadata is reserved for diagnostic stages');
   for (const team of ['ct','t']) {
     const poses=captures.filter(capture=>KEY_POSES.some(pose=>capture.name===team+'-'+pose));
     for (const key of ['poses','palette'])
@@ -87,6 +155,7 @@ function validateStages(captures) {
     assert.equal(new Set(skins.map(skin=>JSON.stringify(skin.palette))).size,3,'Distinct simultaneous skinning poses');
   }
   validateSleepStages(captures);
+  validateDeathWallStages(captures);
 }
 
 function compareSkin(reference,candidate,name) {
@@ -114,6 +183,7 @@ function comparePair(reference, candidate, a, b) {
   assert.ok(candidate.render.draw_calls < reference.render.draw_calls, 'Actual rendered draw calls decrease');
   compareSkin(reference.skin,candidate.skin,reference.name);
   assert.deepEqual(candidate.sleep,reference.sleep,`${reference.name}: same corpse sleep metadata`);
+  assert.deepEqual(candidate.death_wall,reference.death_wall,`${reference.name}: same wall-death diagnostics`);
   assert.equal(candidate.companions.length,reference.companions.length);
   for (let i=0; i<reference.companions.length; i++) {
     const a=reference.companions[i], b=candidate.companions[i];
@@ -167,6 +237,7 @@ if (require.main === module) {
   fs.writeFileSync(path.join(candidate.dir,'operator-comparison.json'),JSON.stringify(report,null,2)+'\n');
   console.log('OPERATOR_MOTION_COMPARISON: PASS',JSON.stringify(report));
   console.log('CORPSE_SLEEP_RENDER_COMPARISON: PASS',JSON.stringify(sleepReport));
+  console.log('CORPSE_WALL_DIAGNOSTICS:',JSON.stringify(validateDeathWallStages(reference.captures)));
 }
 
-module.exports = {comparePair,validateStages,validateSleepStages,compareSleepImages,NAMES};
+module.exports = {comparePair,validateStages,validateSleepStages,compareSleepImages,validateDeathWallStages,NAMES,DEATH_WALL_NAMES};

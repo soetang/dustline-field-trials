@@ -325,11 +325,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
       fs.writeFileSync(path.join(artifacts,'motion-review.json'),JSON.stringify(captures.map(({png,...data})=>data),null,2)+'\n');
       const {PNG}=require('playwright-core/lib/utilsBundle');
-      const {validateStages,compareSleepImages}=require('./compare-operator-reviews');
+      const {validateStages,compareSleepImages,validateDeathWallStages}=require('./compare-operator-reviews');
       validateStages(captures);
       const byName=new Map(captures.map(capture=>[capture.name,capture]));
       const sleepReport=compareSleepImages(captures,name=>PNG.sync.read(Buffer.from(byName.get(name).png,'base64')));
       fs.writeFileSync(path.join(artifacts,'corpse-sleep-review.json'),JSON.stringify(sleepReport,null,2)+'\n');
+      const wallDeathReport=validateDeathWallStages(captures);
+      fs.writeFileSync(path.join(artifacts,'corpse-wall-diagnostics.json'),JSON.stringify(wallDeathReport,null,2)+'\n');
+      console.log('CORPSE_WALL_DIAGNOSTICS:',JSON.stringify(wallDeathReport));
     }
     const flatSurfaceState=flatSurface ? await page.evaluate(() => window.flatSurfaceResult) : null;
     if (flatSurface) {
@@ -347,6 +350,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expectedWalls=operatorMotion ? require('./compare-operator-reviews').NAMES
       : ['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
         'door-near','door-far','player-reported'];
+    const deathWallNames=operatorMotion ? require('./compare-operator-reviews').DEATH_WALL_NAMES : [];
     const expectedGameplay = gpuTiming ? ['timer-off-before','timer-on-before','timer-on-after','timer-off-after']
       : presentationAbba ? ['native-before','cache-before','cache-after','native-after']
       : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
@@ -431,7 +435,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.equal(gpu.stats.blitCalls,gpu.stats.blitsInQuery+gpu.stats.blitsOutsideQuery);
       }
       if (wallReview) {
-        assert.equal(capture.weapon_clear,true,`${capture.name}: whole weapon clears static geometry`);
+        // Wall-adjacent corpse contacts are intentionally diagnostic. The
+        // stage validator still requires complete real shape/palette evidence.
+        if (!deathWallNames.includes(capture.name))
+          assert.equal(capture.weapon_clear,true,`${capture.name}: whole weapon clears static geometry`);
         assert.ok(Number.isFinite(capture.weapon_withdrawal));
         if (operatorMotion) {
           const skins=[capture.skin,...capture.companions.map(other=>other.skin)];
@@ -533,7 +540,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'eighteen staged animated/squad/corpse-sleep views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'eighteen existing operator views plus twelve diagnostic wall-death views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');

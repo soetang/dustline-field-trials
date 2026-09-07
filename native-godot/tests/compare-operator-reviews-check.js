@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {comparePair,validateStages,validateSleepStages,compareSleepImages,NAMES} = require('./compare-operator-reviews');
+const {comparePair,validateStages,validateSleepStages,compareSleepImages,validateDeathWallStages,NAMES,DEATH_WALL_NAMES} = require('./compare-operator-reviews');
 let checks=0;
 const check=fn=>{fn();checks++;};
 const original={name:'ct-walk-first',build:'fixture',actor_position:[0,0,0],actor_yaw:0,weapon_clear:true,weapon_withdrawal:0,companions:[],
@@ -50,6 +50,22 @@ stages[16]={...structuredClone(sleepEntry),name:'ct-sleep-hold',
   sleep:{...sleepEntry.sleep,process_calls:68,held_frames:8}};
 stages[17]={...structuredClone(stages[16]),name:'ct-sleep-moved',actor_position:[0.2,0,0],
   sleep:{...stages[16].sleep,sleeping:false,corpse_time:1/60,process_calls:69,skeleton_updates:2}};
+const identity=[1,0,0,0,1,0,0,0,1,0,0,0];
+for(const capture of stages.slice(18)) {
+  const [,team,angle,phase]=capture.name.match(/^(ct|t)-wall-death-(into|oblique|parallel)-(falling|settled)$/);
+  capture.actor_position=[-7.674,0,-33.478039];
+  capture.skin.poses=Array.from({length:18},()=>[...identity]);
+  capture.skin.palette=Array.from({length:18},()=>[...identity]);
+  capture.skin.model_transform=[...identity];
+  capture.death_wall={schema:1,team,angle_degrees:{into:0,oblique:45,parallel:90}[angle],phase,
+    prewarm_ticks:60,starting_withdrawal:0.9,starting_cached_clear:true,death_ticks:phase==='falling' ? 8 : 60,
+    health:0,paused:true,fall:phase==='falling' ? 0.32 : 1,sleeping:phase==='settled',
+    wall:{found:true,body_class:'StaticBody3D',shape_class:'BoxShape3D',point:[-8,1.4,-33.478039],normal:[1,0,0],shape_size:[1,4,10]},
+    capsule:{shape_class:'CapsuleShape3D',radius:0.32,height:1.8,center_distance_m:0.326,wall_margin_m:0.006,overlaps:0},
+    weapon:{bounds_position:[0,0,0],bounds_size:[0.2,0.3,0.7],shape_size:[0.31,0.41,0.81],
+      hull_transform:[...identity],hull_overlaps:0,connection_clear:true,grip_error_m:[0.001,0.002]},
+    vertices:{body_count:100,weapon_count:30,body_min_wall_m:-0.2,weapon_min_wall_m:0.06},measurement:'fixture diagnostic'};
+}
 check(()=>validateStages(stages));
 check(()=>assert.throws(()=>validateStages(stages.slice(0,-1)),/stages captured/));
 const frozen=structuredClone(stages);
@@ -109,4 +125,52 @@ sleepCandidate.render.draw_calls=94;
 check(()=>assert.equal(comparePair(sleepEntry,sleepCandidate,image,image).changed_pixels,0));
 sleepCandidate.sleep.skeleton_updates++;
 check(()=>assert.throws(()=>comparePair(sleepEntry,sleepCandidate,image,image),/same corpse sleep metadata/));
+check(()=>assert.equal(NAMES.length,30));
+check(()=>assert.equal(validateDeathWallStages(stages).length,12));
+check(()=>assert.throws(()=>validateDeathWallStages(stages.slice(0,-1)),/All twelve/));
+const rejectDeath=(change,pattern)=>check(()=>{
+  const value=structuredClone(stages);change(value[18],value[18].death_wall);
+  assert.throws(()=>validateDeathWallStages(value),pattern);
+});
+rejectDeath(capture=>delete capture.death_wall,/schema/);
+rejectDeath((capture,value)=>value.prewarm_ticks=0,/live wall contact/);
+rejectDeath((capture,value)=>delete value.starting_cached_clear,/prewarm clearance/);
+rejectDeath((capture,value)=>value.starting_withdrawal=NaN,/prewarm withdrawal/);
+rejectDeath((capture,value)=>value.death_ticks=7,/death callbacks/);
+rejectDeath((capture,value)=>value.angle_degrees=30,/45|0|30/);
+rejectDeath((capture,value)=>value.fall=1,/falling\/settled/);
+rejectDeath((capture,value)=>value.wall.found=false,/map wall/);
+rejectDeath((capture,value)=>value.wall.shape_class='SphereShape3D',/BoxShape3D/);
+rejectDeath((capture,value)=>value.wall.shape_size=[1,NaN,1],/Finite wall shape/);
+rejectDeath((capture,value)=>value.capsule.radius=0.476,/capsule dimensions/);
+rejectDeath((capture,value)=>value.capsule.center_distance_m=0.476,/capsule placement/);
+rejectDeath(capture=>capture.actor_position[0]+=0.1,/captured actor/);
+rejectDeath((capture,value)=>value.weapon.shape_size[0]+=0.1,/padded weapon hull/);
+rejectDeath((capture,value)=>value.weapon.hull_transform=[0],/Finite gun hull transform/);
+rejectDeath((capture,value)=>value.weapon.grip_error_m=[NaN,0],/hand-grip errors/);
+rejectDeath((capture,value)=>value.vertices.body_count=0,/Both body and weapon/);
+rejectDeath((capture,value)=>value.vertices.weapon_min_wall_m=Infinity,/Finite weapon_min_wall/);
+rejectDeath(capture=>capture.skin.palette_valid=false,/palette is valid/);
+rejectDeath(capture=>capture.skin.palette[0][0]=NaN,/Finite palette transform/);
+// Existing penetration/grip problems must stay visible, not prevent artifacts.
+const problem=structuredClone(stages);
+problem[18].weapon_clear=false;
+Object.assign(problem[18].death_wall.weapon,{hull_overlaps:3,connection_clear:false,grip_error_m:[0.2,0.3]});
+problem[18].death_wall.vertices.weapon_min_wall_m=-0.4;
+problem[19].death_wall.sleeping=false;
+check(()=>{
+  const report=validateDeathWallStages(problem);
+  assert.equal(report[0].hull_overlaps,3);assert.equal(report[0].connection_clear,false);
+  assert.equal(report[0].weapon_min_wall_m,-0.4);assert.equal(report[1].sleeping,false);
+});
+const deathA=structuredClone(stages[18]),deathB=structuredClone(deathA);
+deathB.skin.bindings=54;deathB.render.draw_calls=94;
+check(()=>assert.equal(comparePair(deathA,deathB,image,image).changed_pixels,0));
+deathB.death_wall.weapon.grip_error_m[0]+=0.001;
+check(()=>assert.throws(()=>comparePair(deathA,deathB,image,image),/same wall-death diagnostics/));
+check(()=>assert.deepEqual(stages.slice(18).map(capture=>capture.name),DEATH_WALL_NAMES));
+check(()=>{
+  const leaked=structuredClone(stages);leaked[0].death_wall=leaked[18].death_wall;
+  assert.throws(()=>validateStages(leaked),/reserved for diagnostic stages/);
+});
 console.log(`OPERATOR_REVIEW_COMPARISON: ${checks}/${checks} passed`);

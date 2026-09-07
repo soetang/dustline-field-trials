@@ -1,6 +1,7 @@
 extends SceneTree
 
 const FootPlacement = preload("res://scripts/foot_placement.gd")
+const WeaponClearance = preload("res://scripts/weapon_clearance.gd")
 # Staged visual inspection, not gameplay or a performance benchmark. No host
 # input: the browser runner rejects pointer capture and all input commands.
 var game: Node3D
@@ -12,6 +13,7 @@ var operator_motion := false
 var model_rests: Dictionary = {}
 var companions: Array[Node3D] = []
 var sleep_probe: Dictionary = {}
+var death_wall_probe: Dictionary = {}
 
 func transform_values(value: Transform3D) -> Array[float]:
 	return [value.basis.x.x,value.basis.x.y,value.basis.x.z,
@@ -93,6 +95,7 @@ func capture(name: String, at: Vector3, target: Vector3, first_person: bool = fa
 				"settle_ticks":sleep_probe.settle_ticks,"process_calls":sleep_probe.process_calls,
 				"held_frames":sleep_probe.held_frames,"skeleton_updates":sleep_probe.skeleton_updates,
 				"health":actor.health,"paused":game.paused,"game_elapsed":game.elapsed}
+		if not death_wall_probe.is_empty(): data.death_wall = death_wall_snapshot()
 	JavaScriptBridge.eval("window.mapReviewCaptures.push("+JSON.stringify(data)+")",true)
 	if operator_motion:
 		# Persist each completed image remotely even if a later stage fails.
@@ -188,6 +191,130 @@ func capture_sleep(bot: Node3D) -> void:
 	bot.rig.skeleton.skeleton_updated.disconnect(count_update)
 	sleep_probe.clear()
 
+func vector_values(value: Vector3) -> Array[float]:
+	return [value.x,value.y,value.z]
+
+func death_wall_snapshot() -> Dictionary:
+	# Independent final-pose diagnostics. Negative mesh distances / excessive
+	# grip errors are evidence to inspect, not hidden by a passing clear flag.
+	var space := game.get_world_3d().direct_space_state
+	var face := Vector3(-8,1.4,report_position.z)
+	var normal := Vector3.RIGHT
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(face+normal,face-normal,1))
+	var wall_shape: Shape3D
+	if not hit.is_empty():
+		var owner: int = hit.collider.shape_find_owner(hit.shape)
+		wall_shape = hit.collider.shape_owner_get_shape(owner,0)
+	var collision: CollisionShape3D = actor.find_children("*","CollisionShape3D",false,false)[0]
+	var capsule: CapsuleShape3D = collision.shape
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.collision_mask = 1
+	query.collide_with_areas = false
+	query.margin = 0
+	query.shape = capsule
+	query.transform = collision.global_transform
+	var capsule_overlaps := space.intersect_shape(query).size()
+	var rig = actor.rig
+	var frame: Transform3D = rig.skeleton.global_transform
+	var gun: Transform3D = rig.pose[rig.ids.weapon] * rig.rest[rig.ids.weapon].affine_inverse()
+	var hull := BoxShape3D.new()
+	hull.size = rig.weapon_clearance.bounds.size + Vector3.ONE * WeaponClearance.SKIN * 2
+	var gun_world := frame * gun
+	query.shape = hull
+	query.transform = Transform3D(gun_world.basis,gun_world * rig.weapon_clearance.bounds.get_center())
+	var hull_overlaps := space.intersect_shape(query).size()
+	var ray := PhysicsRayQueryParameters3D.create(actor.global_transform * Vector3(0,1.4,0),query.transform.origin,1)
+	ray.hit_from_inside = true
+	var connection_clear := space.intersect_ray(ray).is_empty()
+	var grips: Array[float] = []
+	for side in ["l","r"]:
+		var hand: int = rig.ids["hand_"+side]
+		grips.append((frame * rig.pose[hand].origin).distance_to(frame * (gun * rig.rest[hand].origin)))
+	var distances := [INF,INF]
+	var counts := [0,0]
+	for node: MeshInstance3D in actor.model.find_children("*","MeshInstance3D",true,false):
+		if node.skin == null: continue
+		var matrices: Array[Transform3D] = []
+		var weapon_binds: Array[bool] = []
+		for bind in node.skin.get_bind_count():
+			var bone := node.skin.get_bind_bone(bind)
+			if not node.skin.get_bind_name(bind).is_empty(): bone = rig.skeleton.find_bone(node.skin.get_bind_name(bind))
+			matrices.append(rig.skeleton.get_bone_global_pose(bone) * node.skin.get_bind_pose(bind))
+			weapon_binds.append(bone == rig.ids.weapon)
+		for surface in node.mesh.get_surface_count():
+			var arrays := node.mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var joints: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var visited := PackedByteArray()
+			visited.resize(vertices.size())
+			for vertex in indices:
+				if visited[vertex]: continue
+				visited[vertex] = 1
+				var point := Vector3.ZERO
+				var weapon := false
+				for influence in 4:
+					var slot := vertex * 4 + influence
+					point += (matrices[joints[slot]] * vertices[vertex]) * weights[slot]
+					weapon = weapon or (weights[slot] > 0 and weapon_binds[joints[slot]])
+				var group := 1 if weapon else 0
+				distances[group] = minf(distances[group],normal.dot(node.global_transform * point - face))
+				counts[group] += 1
+	var result := death_wall_probe.duplicate()
+	result.merge({"health":actor.health,"paused":game.paused,"fall":rig.fall,"sleeping":rig.corpse_sleeping,
+		"wall":{"found":not hit.is_empty(),"point":vector_values(hit.position if not hit.is_empty() else face),
+			"normal":vector_values(hit.normal if not hit.is_empty() else Vector3.ZERO),
+			"body_class":hit.collider.get_class() if not hit.is_empty() else "",
+			"shape_class":wall_shape.get_class() if wall_shape != null else "",
+			"shape_size":vector_values(wall_shape.size) if wall_shape is BoxShape3D else []},
+		"capsule":{"shape_class":capsule.get_class(),"radius":capsule.radius,"height":capsule.height,
+			"center_distance_m":normal.dot(actor.global_position-face),
+			"wall_margin_m":normal.dot(actor.global_position-face)-capsule.radius,"overlaps":capsule_overlaps},
+		"weapon":{"bounds_position":vector_values(rig.weapon_clearance.bounds.position),
+			"bounds_size":vector_values(rig.weapon_clearance.bounds.size),"shape_size":vector_values(hull.size),
+			"hull_transform":transform_values(query.transform),"hull_overlaps":hull_overlaps,
+			"connection_clear":connection_clear,"grip_error_m":grips},
+		"vertices":{"body_count":counts[0],"weapon_count":counts[1],
+			"body_min_wall_m":distances[0],"weapon_min_wall_m":distances[1]},
+		"measurement":"CPU posed referenced base-LOD vertices (weapon-influenced vs body), not GPU/selected-LOD readback; contact findings are diagnostic"})
+	return result
+
+func capture_wall_death(team: String, bot: Node3D) -> void:
+	for entry in [["into",0.0],["oblique",45.0],["parallel",90.0]]:
+		reset_motion(bot,Vector3(-8+0.326,0,report_position.z))
+		bot.rotation.y = PI/2 + deg_to_rad(entry[1])
+		bot.health = 100
+		bot.collision_layer = 4
+		bot.role = "ATTACK"
+		bot.reload_left = 0
+		bot.look_goal = bot.eye() - bot.global_basis.z * 8
+		bot.rig.last_yaw = bot.rotation.y
+		bot.rig.corpse_sleeping = false
+		bot.rig.corpse_time = 0
+		bot.rig.flash.visible = false
+		bot.rig.weapon_clearance.configure(bot.rig.weapon_clearance.bounds)
+		# Withdrawal history is part of the real death pose: first reach the
+		# same live wall contact for a full second. Other match callbacks stay off.
+		for tick in 60:
+			game.paused = false
+			bot._process(1.0/60)
+			game.paused = true
+		bot.health = 0
+		bot.collision_layer = 0
+		death_wall_probe = {"schema":1,"team":team,"angle_degrees":entry[1],"prewarm_ticks":60,"death_ticks":0,"phase":"falling",
+			"starting_withdrawal":bot.rig.weapon_clearance.amount,"starting_cached_clear":bot.rig.weapon_clearance.clear}
+		for tick in 60:
+			game.paused = false
+			bot._process(1.0/60)
+			game.paused = true
+			death_wall_probe.death_ticks = tick+1
+			if tick+1 in [8,60]:
+				death_wall_probe.phase = "falling" if tick+1 == 8 else "settled"
+				await capture(team+"-wall-death-"+entry[0]+"-"+death_wall_probe.phase,
+					Vector3(-5.0,1.6,-30.9),Vector3(-7.55,0.7,report_position.z))
+		death_wall_probe.clear()
+
 func run() -> void:
 	operator_motion = "--operator-motion" in OS.get_cmdline_user_args()
 	root.size = resolution
@@ -212,6 +339,8 @@ func run() -> void:
 		await capture_motion("t",attacker)
 		await capture_squad()
 		await capture_sleep(ct)
+		await capture_wall_death("ct",ct)
+		await capture_wall_death("t",attacker)
 		print("WALL_REVIEW_OK")
 		JavaScriptBridge.eval("window.mapReviewComplete = true",true)
 		return
