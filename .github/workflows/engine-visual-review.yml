@@ -1,0 +1,89 @@
+name: Courtyard matched-engine image review (no deployment)
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: 'Successful Courtyard engine-review workflow run ID'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: courtyard-engine-visual-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify the selected build's provenance before downloading
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE_BUILD_RUN: ${{ inputs.build_run }}
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const {execFileSync} = require('node:child_process');
+          const run = process.env.ENGINE_BUILD_RUN;
+          assert.match(run, /^[1-9][0-9]{0,15}$/);
+          const repository = process.env.GITHUB_REPOSITORY;
+          const data = JSON.parse(execFileSync('gh', ['api', `repos/${repository}/actions/runs/${run}`], {encoding:'utf8'}));
+          assert.equal(String(data.id), run);
+          assert.equal(data.repository.full_name, repository);
+          assert.equal(data.path, '.github/workflows/engine-review.yml');
+          assert.equal(data.event, 'workflow_dispatch');
+          assert.equal(data.status, 'completed');
+          assert.equal(data.conclusion, 'success');
+          assert.equal(data.head_repository.full_name, repository);
+          assert.match(data.head_sha, /^[a-f0-9]{40}$/);
+          fs.mkdirSync('artifacts/engine-comparison', {recursive:true});
+          fs.writeFileSync('artifacts/engine-comparison/build-run.json', JSON.stringify(data, null, 2) + '\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `sha=${data.head_sha}\nrun=${run}\n`);
+          NODE
+      - uses: actions/download-artifact@v4
+        with:
+          name: courtyard-engine-review-${{ steps.build.outputs.sha }}
+          run-id: ${{ steps.build.outputs.run }}
+          github-token: ${{ github.token }}
+          path: artifacts/engine-templates
+      - name: Verify pinned sources, build flags and both immutable template pairs
+        env:
+          ENGINE_BUILD_RUN: ${{ steps.build.outputs.run }}
+          ENGINE_BUILD_SHA: ${{ steps.build.outputs.sha }}
+        run: |
+          node courtyard/tests/engine-template-review-check.js
+          node courtyard/tests/depth-copy-review-check.js
+          node courtyard/tests/engine-depth-copy-review-check.js
+          node courtyard/tests/engine-template-review.js artifacts/engine-templates --run "$ENGINE_BUILD_RUN" --sha "$ENGINE_BUILD_SHA" > artifacts/engine-comparison/templates.json
+      - uses: actions/cache@v4
+        with:
+          path: .tools/godot/4.7.2
+          key: godot-web-4.7.2-sha512
+      - name: Prepare the verified editor and isolated export only
+        run: |
+          bash courtyard/tools/setup.sh --web
+          bash courtyard/tools/build-web.sh
+          npx playwright install --with-deps chromium
+      - name: Compare original and patched pixels, depth readers and native buffer calls
+        run: node courtyard/tests/engine-depth-copy-review.js artifacts/engine-comparison/templates.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: courtyard-engine-images-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/engine-comparison/*.json
+            artifacts/engine-comparison/*.log
+            artifacts/map-review-browser-*/*.png
+            artifacts/map-review-browser-*/*.json
+            artifacts/map-review-browser-*/*.log
+            artifacts/godot-web-*/*.log

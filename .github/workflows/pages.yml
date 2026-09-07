@@ -15,6 +15,7 @@ on:
       - 'courtyard/tools/build-engine-review.sh'
       - '.github/workflows/visual-review.yml'
       - '.github/workflows/engine-review.yml'
+      - '.github/workflows/engine-visual-review.yml'
       - 'scripts/serve.js'
       - 'tests/serve-check.js'
       - 'tests/check-runner.js'
