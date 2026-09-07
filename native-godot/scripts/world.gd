@@ -17,6 +17,7 @@ const FLOOR_ARM = preload("res://assets/textures/concrete_floor_arm_1k.jpg")
 var materials: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 var batching: Dictionary = {}
+var impact_mesh: BoxMesh
 
 func material(color: Color, metal: float = 0.0) -> StandardMaterial3D:
 	var key := str(color) + str(metal)
@@ -80,6 +81,21 @@ func cylinder(at: Vector3, bottom: float, top: float, height: float, mat: Materi
 	instance.position = at
 	parent.add_child(instance)
 	return instance
+
+func impact_box(at: Vector3, mat: Material) -> Node3D:
+	# Identical immutable geometry for every mark; transforms, material overrides
+	# and the owning game's eight-second lifetime remain per impact as before.
+	if impact_mesh == null:
+		impact_mesh = BoxMesh.new()
+		impact_mesh.size = Vector3(0.055, 0.055, 0.016)
+	var root := Node3D.new()
+	root.position = at
+	add_child(root)
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = impact_mesh
+	mesh.material_override = mat
+	root.add_child(mesh)
+	return root
 
 func sign_text(text: String, at: Vector3, yaw: float, color: Color, size: int = 96) -> Label3D:
 	var label := Label3D.new()

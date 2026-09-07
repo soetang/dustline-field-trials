@@ -13,7 +13,7 @@ const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
 const FrameMetrics = preload("res://scripts/frame_metrics.gd")
 const RenderBudget = preload("res://scripts/render_budget.gd")
-const BUILD := "courtyard-0.4.9-radar-reuse"
+const BUILD := "courtyard-0.4.10-impact-reuse"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -322,7 +322,7 @@ func trace(from: Vector3, to: Vector3) -> void:
 
 func impact(at: Vector3, normal: Vector3) -> void:
 	if silent_test: return
-	var node := world.box(at + normal * 0.014, Vector3(0.055, 0.055, 0.016), world.material(Color("39372f")))
+	var node := world.impact_box(at + normal * 0.014, world.material(Color("39372f")))
 	if absf(normal.dot(Vector3.UP)) < 0.99: node.look_at(at + normal, Vector3.UP)
 	else: node.rotation.x = PI * 0.5
 	get_tree().create_timer(8.0).timeout.connect(func():

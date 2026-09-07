@@ -35,6 +35,9 @@ grep -Eq '^NAVIGATION_CLEARANCE: [0-9]+/[0-9]+ passed' "$log_dir/navigation-clea
 "$godot_bin" --headless --path "$project_dir" --script res://tests/cpu_profile_check.gd -- --test 2>&1 | tee "$log_dir/cpu-profile.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/cpu-profile.log"; then exit 1; fi
 grep -Eq '^CPU_PROFILE: [0-9]+/[0-9]+ passed' "$log_dir/cpu-profile.log"
+"$godot_bin" --headless --path "$project_dir" --script res://tests/shot_effects.gd -- --test 2>&1 | tee "$log_dir/shot-effects.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/shot-effects.log"; then exit 1; fi
+grep -Eq '^SHOT_EFFECTS: [0-9]+/[0-9]+ passed' "$log_dir/shot-effects.log"
 GODOT_BIN="$godot_bin" node "$project_dir/tests/profile-instrumentation-check.js" 2>&1 | tee "$log_dir/profile-instrumentation.log"
 node "$project_dir/tests/presentation-state-cache-check.js" 2>&1 | tee "$log_dir/presentation-state-cache.log"
 node "$project_dir/tests/gpu-timer-probe-check.js" 2>&1 | tee "$log_dir/gpu-timer-probe.log"
