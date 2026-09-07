@@ -7,10 +7,14 @@ let checks=0;
 const check=fn=>{fn();checks++;};
 const identity=[1,0,0,0,1,0,0,0,1,0,0,0];
 const contact=minimum=>({minimum,bone:['foot_l','weapon'],plane:['floor','floor'],finite:true});
+const floatRoundoff=4*Math.pow(2,-23),weightDeficit=4/65535+floatRoundoff;
+const geometry=id=>({case:id,errors:[],weight_sum_supported:true,weight_error_limit:weightDeficit,
+  weight_error:2/65535,weight_sum_min:1-2/65535,weight_sum_max:1});
 const summary={failures:0,failure_labels:[],captures:108,clip_fps:30,clip_requested_ticks:[0,178],clip_note:'Offline replay, not gameplay FPS',
   cases:CASES.map(id=>{
     const [team,placement]=id.split('-');
-    return {team,placement,body_count:12,joint_count:10,native_sleep:true,sleep_tick:200,last_recorded_tick:200,recorded_frames:201,
+    return {team,placement,body_count:12,joint_count:10,native_awake_observed:true,native_sleep:true,geometry:geometry(id),sleep_tick:200,last_recorded_tick:200,recorded_frames:201,
+      recording_3d_disabled:true,modifier_updates:200,
       maximum_tick_gap:1,activation_vertex_delta:0,initial:contact([.003,1.1]),initial_violation:false,
       vertices:team==='ct' ? [3182,551] : [3129,564],activation_usec:6500,backend:'JoltPhysicsDirectSpaceState3D',slop:.005,physics_fps:60,
       contact_sampling:'recorded modifier snapshots; not continuous CCD',transition:{...contact([.002,.001]),samples:201,tick:[2,45]},final:contact([.01,.006])};
@@ -25,7 +29,7 @@ const captures=NAMES.map(name=>{
       palettes:[{mesh:'Operator',bindings:18,rid:String(123+CASES.indexOf(id)),transforms:structuredClone(poses)}]},
     replay_vertex_delta:3e-6,replay_vertex_tolerance:8e-6,contact:contact([.01,.006]),simulation,
     render:{quality:'High',ssao:true,scale_3d:1,viewport_pixels:[960,540],render_3d:[960,540],draw_calls:100,primitives:1000},
-    camera:{transform:[...identity],fov:75},paused:true,game_elapsed:0,png:''};
+    camera:{transform:[...identity],fov:75},paused:true,game_elapsed:0,replay_3d_enabled:true,png:''};
 });
 const original={captures,summary};
 // CPU-only image fixture. Reuse storage; validator hashes each image immediately.
@@ -46,6 +50,55 @@ reject((values,state)=>state.cases[0].backend='GodotPhysicsDirectSpaceState3D',/
 reject((values,state)=>state.cases[0].slop=.02,/5 mm/);
 reject((values,state)=>state.cases[0].slop=NaN,/Finite/);
 reject((values,state)=>state.cases[0].native_sleep=false,/native sleep/);
+for(let index=0;index<CASES.length;index++)
+  reject((values,state)=>delete state.cases[index].native_awake_observed,/native awake state/);
+reject((values,state)=>state.cases[0].native_awake_observed=false,/native awake state/);
+reject((values,state)=>state.cases[0].native_awake_observed=1,/native awake state/);
+reject((values,state)=>delete state.cases[0].recording_3d_disabled,/recording skips/);
+reject((values,state)=>state.cases[0].recording_3d_disabled=false,/recording skips/);
+reject((values,state)=>delete state.cases[0].modifier_updates,/actual modifier updates/);
+reject((values,state)=>state.cases[0].modifier_updates=0,/actual modifier updates/);
+reject((values,state)=>state.cases[0].modifier_updates=1,/modifiers cover/);
+reject(values=>delete values[0].replay_3d_enabled,/rendering restored/);
+reject(values=>values[0].replay_3d_enabled=false,/rendering restored/);
+reject((values,state)=>delete state.cases[0].geometry,/geometry evidence/);
+reject((values,state)=>state.cases[0].geometry.case='t-flat',/geometry evidence/);
+reject((values,state)=>state.cases[0].geometry.errors=['missing skin influence'],/no indexed geometry/);
+reject((values,state)=>delete state.cases[0].geometry.errors,/no indexed geometry/);
+reject((values,state)=>state.cases[0].geometry.errors=null,/no indexed geometry/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_supported=false,/supported UNORM16/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_supported=1,/supported UNORM16/);
+reject((values,state)=>delete state.cases[0].geometry.weight_sum_supported,/supported UNORM16/);
+for(const field of ['weight_error_limit','weight_sum_min','weight_sum_max','weight_error']) {
+  reject((values,state)=>delete state.cases[0].geometry[field],/Finite/);
+  reject((values,state)=>state.cases[0].geometry[field]=NaN,/Finite/);
+  reject((values,state)=>state.cases[0].geometry[field]=Infinity,/Finite/);
+  reject((values,state)=>state.cases[0].geometry[field]='0',/Finite/);
+}
+reject((values,state)=>state.cases[0].geometry.weight_error_limit=.001,/independently derived/);
+reject((values,state)=>state.cases[0].geometry.weight_error_limit=.00001,/independently derived/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_min=1-weightDeficit-1e-10,/deficit stays within/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_max=1+floatRoundoff+1e-10,/excess is float roundoff/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_max=1+weightDeficit,/excess is float roundoff/);
+reject((values,state)=>state.cases[0].geometry.weight_sum_max=.9,/ordered weight sum/);
+reject((values,state)=>state.cases[0].geometry.weight_error=-1e-12,/recorded weight error stays/);
+reject((values,state)=>state.cases[0].geometry.weight_error=weightDeficit+1e-10,/recorded weight error stays/);
+reject((values,state)=>state.cases[0].geometry.weight_error=0,/agrees with extrema/);
+reject(values=>{values[0].simulation=structuredClone(values[0].simulation);delete values[0].simulation.native_awake_observed;},/matching simulation summary/);
+reject(values=>{values[0].simulation=structuredClone(values[0].simulation);delete values[0].simulation.geometry;},/matching simulation summary/);
+reject(values=>{values[0].simulation=structuredClone(values[0].simulation);values[0].simulation.geometry.errors=['unrecorded error'];},/matching simulation summary/);
+check(()=>{
+  // Boundary and realistic Web UNORM16 deficits remain supported without
+  // widening any body/rifle contact or replay tolerance. Also cover normal
+  // JSON decimal rounding of the independently derived bound.
+  const value=structuredClone(original);
+  for(const [index,minimum,maximum] of [[0,1-weightDeficit,1],[1,1,1+floatRoundoff],
+    [2,1-3/65535,1],[3,1,1]]) {
+    Object.assign(value.summary.cases[index].geometry,{weight_sum_min:minimum,weight_sum_max:maximum,
+      weight_error:Math.max(Math.abs(minimum-1),Math.abs(maximum-1)),weight_error_limit:Number(weightDeficit.toPrecision(14))});
+  }
+  validateReview(value.captures,value.summary,readImage);
+});
 reject((values,state)=>state.cases[0].sleep_tick=901,/sleep tick/);
 reject((values,state)=>state.cases[0].maximum_tick_gap=3,/snapshot gap/);
 reject((values,state)=>state.cases[0].recorded_frames=3,/complete recorded timeline/);

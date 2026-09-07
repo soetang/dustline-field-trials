@@ -106,6 +106,7 @@ func timeline_contact(driver: Driver, data: Dictionary, planes: Array) -> Dictio
 
 func capture(name: String, rig: FieldOperatorRig, frame: Dictionary, data: Dictionary,
 		planes: Array, summary: Dictionary, requested_tick: int) -> void:
+	check(not root.disable_3d, name + " replay restores the real 3D renderer")
 	write_pose(rig, frame.poses)
 	# Keep all replay frames equally warmed; static world and High graphics.
 	for i in 3: await RenderingServer.frame_post_draw
@@ -131,7 +132,7 @@ func capture(name: String, rig: FieldOperatorRig, frame: Dictionary, data: Dicti
 		"skin":skin,"replay_vertex_delta":replay_delta,"replay_vertex_tolerance":replay_tolerance,
 		"contact":contact,"simulation":summary,"render":render,"build":game.BUILD,
 		"camera":{"transform":transform_values(camera.global_transform),"fov":camera.fov},
-		"paused":game.paused,"game_elapsed":game.elapsed}
+		"paused":game.paused,"game_elapsed":game.elapsed,"replay_3d_enabled":not root.disable_3d}
 	JavaScriptBridge.eval("window.mapReviewCaptures.push("+JSON.stringify(result)+")", true)
 	# Persist each image during the run, including before a later assertion fails.
 	JavaScriptBridge.eval("window.saveMotionCapture(window.mapReviewCaptures.at(-1)).catch(console.error)", true)
@@ -169,7 +170,11 @@ func case_review(team: String, placement: String) -> void:
 		rig.update_pose(1.0/60,Vector3.ZERO,Vector2.ZERO,0,false,false,0,
 			actor.global_transform,game.Layout.floor_height,game.get_world_3d().direct_space_state)
 	var geometry := Geometry.capture(rig)
-	check(geometry.errors.is_empty() and geometry.weight_error <= 0.00001
+	var geometry_info := {"case":team+"-"+placement,"errors":geometry.errors,"weight_error":geometry.weight_error,
+		"weight_error_limit":geometry.weight_error_limit,"weight_sum_min":geometry.weight_sum_min,
+		"weight_sum_max":geometry.weight_sum_max,"weight_sum_supported":geometry.weight_sum_supported}
+	print("DEATH_GEOMETRY ",JSON.stringify(geometry_info))
+	check(geometry.errors.is_empty() and geometry.weight_sum_supported
 		and geometry.counts[0] > 0 and geometry.counts[1] > 0, "original model geometry is supported")
 	var before := Geometry.points(geometry,Geometry.poses(rig))
 	var initial := Geometry.clearance(before,planes)
@@ -182,10 +187,14 @@ func case_review(team: String, placement: String) -> void:
 	check(activation_delta == 0.0, "activation preserves every original vertex exactly")
 	var driver := Driver.new()
 	game.add_child(driver)
+	# This phase only records native physics/modifier poses. Headless A/B checks
+	# preserve every recorded bone transform with 3D disabled; images are replayed
+	# with the real High renderer restored and warmed below, not timed as FPS.
+	root.disable_3d = true
 	driver.begin(controller)
 	while not driver.done and Engine.get_physics_frames() - driver.started < 900:
 		await physics_frame
-	var native_sleep: bool = driver.done and controller.frozen and controller.engine_sleeping
+	var native_sleep: bool = driver.done and controller.frozen and controller.engine_sleeping and controller.native_awake_observed
 	check(native_sleep, "real corpse reaches native sleep within 15 seconds")
 	# A timeout remains a failure, but its final recorded state and PNG evidence
 	# still survive. Disposing for replay is not reported as native settlement.
@@ -198,10 +207,13 @@ func case_review(team: String, placement: String) -> void:
 		"last_recorded_tick":driver.frames[-1].tick,"recorded_frames":driver.frames.size(),
 		"maximum_tick_gap":max_gap,"activation_vertex_delta":activation_delta,"initial":initial,
 		"initial_violation":initial.minimum[0] < 0 or initial.minimum[1] < 0,"vertices":geometry.counts,
+		"geometry":geometry_info,"native_awake_observed":controller.native_awake_observed,
+		"recording_3d_disabled":root.disable_3d,"modifier_updates":controller.modifier_updates,
 		"activation_usec":controller.activation_usec,"backend":game.get_world_3d().direct_space_state.get_class(),
 		"slop":ProjectSettings.get_setting_with_override("physics/jolt_physics_3d/simulation/penetration_slop"),
 		"physics_fps":Engine.physics_ticks_per_second,"contact_sampling":"recorded modifier snapshots; not continuous CCD"}
 	controller.dispose()
+	root.disable_3d = false
 	check(model.find_children("*","PhysicalBone3D",true,false).is_empty(), "replay has no surviving physical bodies")
 	var transition := timeline_contact(driver,geometry,planes)
 	var final := Geometry.clearance(Geometry.points(geometry,driver.frames[-1].poses),planes)

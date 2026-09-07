@@ -4,8 +4,20 @@ extends RefCounted
 ## procedural rig.pose. Caller supplies completed Skeleton modifier snapshots.
 ## Plane distances are discrete samples, not continuous triangle/edge CCD.
 
+# The pinned RenderingServer packs each of four weights by truncating to
+# uint16(weight * 65535), then unpacks to float32 / 65535. Four truncations
+# can lose <4/65535 in the sum; float32 packing/unpacking adds rounding only.
+# Do not renormalize these weights: the renderer uses the stored values too.
+const WEIGHT_FLOAT_ROUNDOFF := 4.0 * pow(2.0, -23.0)
+const WEIGHT_SUM_DEFICIT := 4.0 / 65535.0 + WEIGHT_FLOAT_ROUNDOFF
+
+static func weight_sum_supported(total: float) -> bool:
+	return is_finite(total) and total >= 1.0 - WEIGHT_SUM_DEFICIT and total <= 1.0 + WEIGHT_FLOAT_ROUNDOFF
+
 static func capture(rig: RefCounted) -> Dictionary:
-	var result := {"surfaces": [], "counts": [0, 0], "weight_error": 0.0, "errors": []}
+	var result := {"surfaces": [], "counts": [0, 0], "weight_error": 0.0, "errors": [],
+		"weight_sum_min": 0.0, "weight_sum_max": 0.0, "weight_sum_supported": true,
+		"weight_error_limit": WEIGHT_SUM_DEFICIT}
 	if rig == null or not is_instance_valid(rig.skeleton) or not is_instance_valid(rig.model):
 		result.errors.append("missing rig/skeleton/model")
 		return result
@@ -50,7 +62,7 @@ static func capture(rig: RefCounted) -> Dictionary:
 				for influence in 4:
 					var weight := weights[index * 4 + influence]
 					var bind_index := joints[index * 4 + influence]
-					if not is_finite(weight) or weight < 0 or bind_index < 0 or bind_index >= binds.size():
+					if not is_finite(weight) or weight < 0 or weight > 1 or bind_index < 0 or bind_index >= binds.size():
 						result.errors.append("invalid skin influence")
 						continue
 					total += weight
@@ -63,6 +75,15 @@ static func capture(rig: RefCounted) -> Dictionary:
 						greatest = weight
 						label = rig.skeleton.get_bone_name(bind.bone)
 				result.weight_error = maxf(result.weight_error, absf(total - 1.0))
+				if result.counts[0] + result.counts[1] == 0:
+					result.weight_sum_min = total
+					result.weight_sum_max = total
+				else:
+					result.weight_sum_min = minf(result.weight_sum_min, total)
+					result.weight_sum_max = maxf(result.weight_sum_max, total)
+				if not weight_sum_supported(total):
+					result.weight_sum_supported = false
+					result.errors.append("skin weight sum exceeds four-influence UNORM16 normalization bound")
 				if influences.is_empty(): result.errors.append("vertex has no positive valid skin influence")
 				var group := 1 if weapon else 0
 				result.counts[group] += 1

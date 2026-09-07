@@ -11,6 +11,14 @@ const CLIP_NAMES = Array.from({length:90},(_,index)=>`ct-wall-motion-${String(in
 const NAMES = CASES.flatMap(id=>[...['early','impact','rest'].map(phase=>`${id}-${phase}`),...(id==='ct-wall' ? CLIP_NAMES : [])]);
 const COUNTS = {ct:[3182,551],t:[3129,564]};
 const LABEL = 'Death-only native-physics pose replay; not gameplay or FPS evidence';
+// Same representation bound as the independent geometry sampler: four
+// truncated UNORM16 influences plus float32 packing/unpacking roundoff. This
+// is not contact padding, weight renormalization, or a caller-chosen tolerance.
+const WEIGHT_FLOAT_ROUNDOFF = 4 * 2 ** -23;
+const WEIGHT_SUM_DEFICIT = 4 / 65535 + WEIGHT_FLOAT_ROUNDOFF;
+// Godot JSON.stringify may round decimal float text; allow only serialization
+// noise when comparing its reported bound/extrema with double-precision math.
+const WEIGHT_JSON_ROUNDOFF = 1e-13;
 
 function validateArguments(args) {
   assert.ok(args.every(arg=>['--death-review','--capture'].includes(arg)),
@@ -50,6 +58,27 @@ function contact(value,label) {
     assert.ok(Array.isArray(value[field]) && value[field].length===2 && value[field].every(name=>typeof name==='string' && name.length>0),`${label}: ${field} labels`);
 }
 
+function geometry(value,id) {
+  assert.equal(value?.case,id,`${id}: geometry evidence belongs to this case`);
+  assert.deepEqual(value.errors,[],`${id}: no indexed geometry/skin errors`);
+  assert.equal(value.weight_sum_supported,true,`${id}: supported UNORM16 weight sums`);
+  const limit=finite(value.weight_error_limit,`${id} weight error limit`);
+  assert.ok(Math.abs(limit-WEIGHT_SUM_DEFICIT)<=WEIGHT_JSON_ROUNDOFF,
+    `${id}: independently derived four-influence UNORM16 bound`);
+  const minimum=finite(value.weight_sum_min,`${id} minimum weight sum`);
+  const maximum=finite(value.weight_sum_max,`${id} maximum weight sum`);
+  assert.ok(minimum<=maximum,`${id}: ordered weight sum extrema`);
+  assert.ok(minimum>=1-WEIGHT_SUM_DEFICIT-WEIGHT_JSON_ROUNDOFF,
+    `${id}: weight sum deficit stays within UNORM16 bound`);
+  assert.ok(maximum<=1+WEIGHT_FLOAT_ROUNDOFF+WEIGHT_JSON_ROUNDOFF,
+    `${id}: weight sum excess is float roundoff only`);
+  const error=finite(value.weight_error,`${id} weight error`);
+  assert.ok(error>=0 && error<=WEIGHT_SUM_DEFICIT+WEIGHT_JSON_ROUNDOFF,
+    `${id}: recorded weight error stays within UNORM16 bound`);
+  assert.ok(Math.abs(error-Math.max(Math.abs(minimum-1),Math.abs(maximum-1)))<=WEIGHT_JSON_ROUNDOFF,
+    `${id}: recorded weight error agrees with extrema`);
+}
+
 function validateCase(value,id) {
   const [team,placement]=id.split('-');
   assert.equal(value.team,team);
@@ -59,15 +88,20 @@ function validateCase(value,id) {
   assert.equal(value.physics_fps,60);
   assert.equal(value.body_count,12);
   assert.equal(value.joint_count,10);
+  assert.equal(value.native_awake_observed,true,`${id}: native awake state observed before sleep`);
+  assert.equal(value.recording_3d_disabled,true,`${id}: recording skips only the unused 3D rendering`);
   assert.equal(value.native_sleep,true,`${id}: actual native sleep, never timeout freeze`);
   integer(value.sleep_tick,1,900,`${id} sleep tick`);
   assert.equal(value.last_recorded_tick,value.sleep_tick);
+  integer(value.modifier_updates,1,1000,`${id} actual modifier updates`);
+  assert.ok(value.modifier_updates>=value.recorded_frames-2,`${id}: native modifiers cover recorded poses`);
   integer(value.recorded_frames,3,902,`${id} recorded frames`);
   integer(value.maximum_tick_gap,1,2,`${id} maximum snapshot gap`);
   assert.ok(value.recorded_frames>=Math.ceil(value.sleep_tick/value.maximum_tick_gap)+1 && value.recorded_frames<=value.sleep_tick+1,
     `${id}: snapshot count spans the complete recorded timeline`);
   assert.equal(value.activation_vertex_delta,0,'Exact activation from original indexed mesh');
   assert.deepEqual(value.vertices,COUNTS[team],'Original indexed body and rifle vertex counts');
+  geometry(value.geometry,id);
   assert.ok(finite(value.activation_usec,'activation usec')>=0);
   for(const field of ['initial','transition','final']) contact(value[field],`${id} ${field}`);
   assert.equal(value.initial_violation,value.initial.minimum.some(distance=>distance<0),'Initial overlap is reported separately');
@@ -112,6 +146,7 @@ function validateReview(captures,summary,readImage) {
     assert.ok(capture.tick<=requested && capture.tick>=Math.min(requested,simulation.sleep_tick)-2,'Replay selects the latest available recorded tick');
     assert.equal(capture.paused,true,'Live game remains paused');
     assert.equal(capture.game_elapsed,0,'No live match/AI ticks');
+    assert.equal(capture.replay_3d_enabled,true,'Real 3D rendering restored for every replay image');
     assert.match(capture.fixture,/not gameplay or FPS/);
     assert.ok(typeof capture.build==='string' && capture.build.length>0,'Source build recorded');
     assert.equal(capture.bones,18);

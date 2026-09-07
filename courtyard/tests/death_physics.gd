@@ -33,6 +33,7 @@ class Actor:
 var passed := 0
 var failed := 0
 var rows: Array = []
+var readiness_rows: Array = []
 var completed: Dictionary = {}
 var fixture: Fixture
 var backend := ""
@@ -174,7 +175,7 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 	var setup: Dictionary = await prepare(team, scene, yaw, distance)
 	var actor: Actor = setup.actor
 	var data := Geometry.capture(actor.rig)
-	check(data.errors.is_empty() and data.counts == EXPECTED_COUNTS[team] and data.weight_error < 0.0001,
+	check(data.errors.is_empty() and data.counts == EXPECTED_COUNTS[team] and data.weight_sum_supported,
 		label + " complete original indexed body/rifle Skin geometry: " + str(data.errors))
 	if not data.errors.is_empty():
 		fixture.free()
@@ -243,7 +244,7 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 		previous = actual
 		if helper.frozen:
 			first_frozen = frame
-			native_sleep = all_sleeping and helper.engine_sleeping
+			native_sleep = all_sleeping and helper.engine_sleeping and helper.native_awake_observed
 			break
 		if frame == 12:
 			paused_pose = helper.latest_global_poses.duplicate()
@@ -260,6 +261,8 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 	if helper.frozen: bake_result = await frozen_probe(helper, actor, data, signals, label)
 	var row := {"team": team, "scene": scene, "yaw": yaw, "wall_distance": distance,
 		"vertices": data.counts, "initial": initial, "initial_violation": initial.minimum[0] < 0 or initial.minimum[1] < 0,
+		"geometry": {"errors":data.errors,"weight_error":data.weight_error,"weight_error_limit":data.weight_error_limit,
+			"weight_sum_min":data.weight_sum_min,"weight_sum_max":data.weight_sum_max,"weight_sum_supported":data.weight_sum_supported},
 		"starting_withdrawal": starting_withdrawal, "activation_max_vertex_delta": activation_delta,
 		"transition": transition, "final": final, "native_sleep": native_sleep, "frozen_frame": first_frozen,
 		"sampled_physics_ticks": sampled_ticks, "maximum_tick_gap": maximum_tick_gap, "max_reported_contacts_per_body": contacts,
@@ -317,6 +320,55 @@ func cleanup_case(team: String, mode: String) -> void:
 	fixture.free()
 	await process_frame
 
+func readiness_case(team: String, idle_activation: bool) -> void:
+	var label := team + (" idle activation" if idle_activation else " physics activation")
+	var setup: Dictionary = await prepare(team,"flat",0)
+	var actor: Actor = setup.actor
+	if idle_activation: await process_frame
+	check(Engine.is_in_physics_frame() != idle_activation, label + " exercises the intended activation phase")
+	var helper := Controller.new()
+	check(helper.activate(actor.rig,Vector3.ZERO), label + " starts twelve native bodies")
+	var initially_inactive := true
+	for body in helper.bodies:
+		initially_inactive = initially_inactive and PhysicsServer3D.body_get_mode(body.get_rid()) == PhysicsServer3D.BODY_MODE_RIGID
+		initially_inactive = initially_inactive and PhysicsServer3D.body_get_state(body.get_rid(),PhysicsServer3D.BODY_STATE_SLEEPING)
+	check(initially_inactive and not helper.native_awake_observed, label + " reproduces Jolt pre-step inactivity")
+	var initial := helper.latest_global_poses.duplicate()
+	# Repeated calls without a physics step must not turn a guessed frame delay
+	# into apparent readiness. No native simulation time elapses in this loop.
+	for call in 4: helper.tick(STEP)
+	check(helper.active and not helper.frozen and not helper.engine_sleeping and not helper.native_awake_observed,
+		label + " startup inactivity never counts as settled sleep")
+	var signals := {"count":0}
+	actor.rig.skeleton.skeleton_updated.connect(func(): signals.count += 1)
+	var moved := false
+	var frozen_frame := -1
+	for frame in MAX_TICKS:
+		await physics_frame
+		helper.tick(STEP)
+		moved = moved or helper.latest_global_poses != initial
+		if helper.frozen:
+			frozen_frame = frame
+			break
+	check(frozen_frame >= 0 and moved and helper.native_awake_observed and helper.engine_sleeping,
+		label + " real native awake/fall/sleep completes within the bounded deadline")
+	if helper.frozen: await frozen_probe(helper,actor,Geometry.capture(actor.rig),signals,label)
+	readiness_rows.append({"team":team,"idle_activation":idle_activation,"initially_inactive":initially_inactive,
+		"calls_before_step":4,"native_awake_observed":helper.native_awake_observed,"moved":moved,"frozen_frame":frozen_frame})
+	helper.dispose()
+	fixture.free()
+	await process_frame
+
+func geometry_weight_checks() -> void:
+	check(Geometry.weight_sum_supported(1.0), "normalized weight sum is supported")
+	var halves := PackedFloat32Array([32767.0/65535.0,32767.0/65535.0])
+	check(absf(halves[0]+halves[1]-1.0) > 0.00001 and Geometry.weight_sum_supported(halves[0]+halves[1]),
+		"actual two-weight UNORM16 truncation exceeds obsolete 1e-5 but remains valid")
+	check(Geometry.weight_sum_supported(4.0*16383.0/65535.0), "four truncated normalized weights stay supported")
+	check(not Geometry.weight_sum_supported(1.0-5.0/65535.0), "excess weight deficit is not hidden by quantization allowance")
+	check(not Geometry.weight_sum_supported(1.001) and not Geometry.weight_sum_supported(0.0)
+		and not Geometry.weight_sum_supported(INF) and not Geometry.weight_sum_supported(NAN), "invalid weight sums remain rejected")
+
 func run() -> void:
 	var started := Time.get_ticks_usec()
 	var probe := Node3D.new()
@@ -332,6 +384,10 @@ func run() -> void:
 		print("DEATH_PHYSICS: ", passed, "/", passed + failed, " passed; cases=0/22")
 		quit(1)
 		return
+	geometry_weight_checks()
+	for team in ["ct", "t"]:
+		for idle_activation in [false,true]: await readiness_case(team,idle_activation)
+	check(readiness_rows.size() == 4, "all sequential physics/idle startup regression cases completed")
 	for team in ["ct", "t"]:
 		await measure_case(team, "flat", 0)
 		for distance in [0.326, 0.476]:
@@ -346,7 +402,7 @@ func run() -> void:
 		var file := FileAccess.open(output, FileAccess.WRITE)
 		check(file != null, "optional artifact output opens")
 		if file != null:
-			file.store_string(JSON.stringify({"backend": backend, "penetration_slop": slop, "cases": rows,
+			file.store_string(JSON.stringify({"backend": backend, "penetration_slop": slop, "cases": rows,"readiness_cases":readiness_rows,
 				"passed": passed, "failed": failed, "elapsed_seconds": (Time.get_ticks_usec() - started) / 1000000.0,
 				"measurement": "Original indexed skinned body/rifle vertices at native physics tick snapshots; supporting planes, not continuous CCD. Initial live-pose violations separate. Elapsed time is whole-suite runtime, not solver cost or FPS."}, "  "))
 			file.close()

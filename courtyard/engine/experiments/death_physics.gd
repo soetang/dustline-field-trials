@@ -19,6 +19,7 @@ var active := false
 var paused := false
 var frozen := false
 var engine_sleeping := false
+var native_awake_observed := false
 var body_count := 0
 var joint_count := 0
 var modifier_updates := 0
@@ -80,6 +81,7 @@ func activate(source_rig: RefCounted, velocity := Vector3.ZERO) -> bool:
 	frozen = false
 	paused = false
 	engine_sleeping = false
+	native_awake_observed = false
 	_paused_states.clear()
 	_old_callback = skeleton.modifier_callback_mode_process
 	skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL
@@ -187,11 +189,17 @@ func tick(dt: float) -> void:
 	if not is_instance_valid(skeleton) or not is_instance_valid(simulator):
 		dispose()
 		return
-	engine_sleeping = true
+	var all_sleeping := true
 	for pb in bodies:
 		if not PhysicsServer3D.body_get_state(pb.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING):
-			engine_sleeping = false
+			all_sleeping = false
+			native_awake_observed = true
 			break
+	# Jolt's newly added RIGID bodies report inactive before their first step.
+	# An idle-frame activation can reach tick() in this state even after a
+	# modifier callback. Observe the native awake -> asleep lifecycle instead
+	# of interpreting startup inactivity as settlement or guessing a delay.
+	engine_sleeping = native_awake_observed and all_sleeping
 	if engine_sleeping:
 		bake_and_stop()
 	else:
