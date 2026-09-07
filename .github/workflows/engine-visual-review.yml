@@ -6,6 +6,11 @@ on:
         description: 'Successful Courtyard engine-review workflow run ID'
         required: true
         type: string
+      review:
+        description: 'Depth-reader matrix or full-map/quality-transition comparison; not hardware FPS'
+        type: choice
+        default: depth-copy
+        options: [depth-copy, full-map]
 permissions:
   contents: read
   actions: read
@@ -62,6 +67,7 @@ jobs:
           node courtyard/tests/engine-template-review-check.js
           node courtyard/tests/depth-copy-review-check.js
           node courtyard/tests/engine-depth-copy-review-check.js
+          node courtyard/tests/engine-map-review-check.js
           node courtyard/tests/engine-template-review.js artifacts/engine-templates --run "$ENGINE_BUILD_RUN" --sha "$ENGINE_BUILD_SHA" > artifacts/engine-comparison/templates.json
       - uses: actions/cache@v4
         with:
@@ -73,7 +79,14 @@ jobs:
           bash courtyard/tools/build-web.sh
           npx playwright install --with-deps chromium
       - name: Compare original and patched pixels, depth readers and native buffer calls
-        run: node courtyard/tests/engine-depth-copy-review.js artifacts/engine-comparison/templates.json
+        env:
+          ENGINE_REVIEW_KIND: ${{ inputs.review }}
+        run: |
+          case "$ENGINE_REVIEW_KIND" in
+            depth-copy) node courtyard/tests/engine-depth-copy-review.js artifacts/engine-comparison/templates.json ;;
+            full-map) node courtyard/tests/engine-depth-copy-review.js artifacts/engine-comparison/templates.json --map ;;
+            *) exit 1 ;;
+          esac
       - uses: actions/upload-artifact@v4
         if: always()
         with:

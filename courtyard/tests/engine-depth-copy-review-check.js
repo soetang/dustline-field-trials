@@ -21,6 +21,11 @@ const templates = {schema:1, templates:{baseline:{js_sha256:'a'.repeat(64), wasm
 for (const mode of ['baseline', 'patched']) {
   const review = {staged:true, depth_copy_review:true, expected_patch:mode === 'patched', engine:{...templates.templates[mode]}};
   check(() => validateEngine(review, templates, mode));
+  const mapReview = {...review, depth_copy_review:false, engine_map_review:true};
+  check(() => validateEngine(mapReview, templates, mode, 'engine-map'));
+  check(() => assert.throws(() => validateEngine(mapReview, templates, mode)));
+  check(() => assert.throws(() => validateEngine(review, templates, mode, 'engine-map')));
+  check(() => assert.throws(() => validateEngine(review, templates, mode, 'unknown')));
   for (const field of ['staged', 'depth_copy_review', 'expected_patch'])
     check(() => assert.throws(() => validateEngine({...review, [field]:!review[field]}, templates, mode)));
   for (const field of ['js_sha256', 'wasm_sha256'])
