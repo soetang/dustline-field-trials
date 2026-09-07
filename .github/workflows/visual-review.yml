@@ -6,7 +6,7 @@ on:
         description: 'Map/wall screenshots or CPU/GPU-fixture check; not hardware FPS'
         type: choice
         default: map
-        options: [map, walls, crates, operators, operator-motion, hud, surfaces, cpu, gpu, reported-view, engine]
+        options: [map, walls, crates, operators, operator-motion, death-motion, hud, surfaces, cpu, gpu, reported-view, engine]
 permissions:
   contents: read
 concurrency:
@@ -23,6 +23,14 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: node courtyard/tests/hud-buffer-probe-check.js --with-png
+      - name: Check death-review validator and prepare offline VP9 encoder
+        if: inputs.scene == 'death-motion'
+        run: |
+          node courtyard/tests/death-review-check.js
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
       - uses: actions/cache@v4
         with:
           path: .tools/godot/4.7.2
@@ -54,6 +62,7 @@ jobs:
               node courtyard/tests/map-review-browser.js --wall-review --operator-motion --operator-surface
               node courtyard/tests/compare-operator-reviews.js
               ;;
+            death-motion) node courtyard/tests/map-review-browser.js --death-review ;;
             engine) node courtyard/tests/map-review-browser.js --engine-lifecycle --capture ;;
             cpu) node courtyard/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
             reported-view)
@@ -79,4 +88,5 @@ jobs:
             artifacts/map-review-browser-*/*.json
             artifacts/map-review-browser-*/*.cpuprofile
             artifacts/map-review-browser-*/*.log
+            artifacts/map-review-browser-*/*.webm
             artifacts/godot-web-*/*.log

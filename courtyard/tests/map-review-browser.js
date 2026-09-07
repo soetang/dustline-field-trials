@@ -24,6 +24,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const wallReview = process.argv.includes('--wall-review');
   const operatorMotion = process.argv.includes('--operator-motion');
   assert.ok(!operatorMotion || wallReview,'Operator motion uses the isolated wall-review fixture');
+  const deathReview = process.argv.includes('--death-review');
+  const deathTools = deathReview ? require('./death-review') : null;
+  if (deathReview) deathTools.validateArguments(process.argv.slice(2));
   const hudReview = process.argv.includes('--hud-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
@@ -53,8 +56,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   assert.ok(!presentationCache || ((benchmark || engineLifecycle) && !presentationAbba),'Fixed presentation cache is only available in render/engine fixtures');
   assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
     'GPU timing requires an isolated benchmark or gameplay profile without other experiments');
-  assert.ok([benchmark,wallReview,hudReview,gameplayProfile,engineLifecycle].filter(Boolean).length <= 1,'Choose one review/profile mode');
-  const longFixture = benchmark || wallReview || hudReview || gameplayProfile || engineLifecycle;
+  assert.ok([benchmark,wallReview,hudReview,gameplayProfile,engineLifecycle,deathReview].filter(Boolean).length <= 1,'Choose one review/profile mode');
+  const longFixture = benchmark || wallReview || hudReview || gameplayProfile || engineLifecycle || deathReview;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
   assert.ok(!steadyProfile || ((benchmark || gameplayProfile) && !process.argv.includes('--profile')),
@@ -80,6 +83,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
     fs.writeFileSync(path.join(reviewProject,'_reported_view.json'),JSON.stringify(reportedView)+'\n');
   }
   if (hudReview) fs.copyFileSync(path.join(project,'tests/fixtures/hud_reference.gd'),path.join(reviewProject,'_hud_reference.gd'));
+  if (deathReview) {
+    fs.copyFileSync(path.join(project,'engine/experiments/death_physics.gd'),path.join(reviewProject,'_death_physics.gd'));
+    fs.copyFileSync(path.join(project,'tests/fixtures/death_geometry.gd'),path.join(reviewProject,'_death_geometry.gd'));
+  }
   if (flatSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/flat_surface.gdshader'),path.join(reviewProject,'_flat_surface.gdshader'));
     const source=fs.readFileSync(path.join(project,'engine/experiments/flat_surface.gd'),'utf8');
@@ -149,7 +156,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
     assert.match(source,/const BATCH_CELL_SIZE := [\d.]+/);
     fs.writeFileSync(file,source.replace(/const BATCH_CELL_SIZE := [\d.]+/,`const BATCH_CELL_SIZE := ${batchCell}.0`));
   }
-  const settings = fs.readFileSync(path.join(project,'project.godot'),'utf8').replace('run/main_scene="res://main.tscn"','run/main_scene="res://_map_review.tscn"');
+  let settings = fs.readFileSync(path.join(project,'project.godot'),'utf8').replace('run/main_scene="res://main.tscn"','run/main_scene="res://_map_review.tscn"');
+  if (deathReview) settings=deathTools.physicsSettings(settings);
   fs.writeFileSync(path.join(reviewProject,'project.godot'),settings);
   let presets = fs.readFileSync(path.join(project,'export_presets.cfg'),'utf8').replaceAll('../.tools/',path.resolve(project,'../.tools')+'/');
   if (reportedView) presets=presets.replaceAll('include_filter="*.md,*.txt"','include_filter="*.md,*.txt,_reported_view.json"');
@@ -165,7 +173,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (gpuTiming) fs.copyFileSync(path.join(__dirname,'gpu_profile.gd'),path.join(reviewProject,'_gpu_profile.gd'));
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
-  let reviewScript = fs.readFileSync(path.join(__dirname,engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : hudReview ? 'hud_review.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
+  let reviewScript = fs.readFileSync(path.join(__dirname,deathReview ? 'death_review.gd' : engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : hudReview ? 'hud_review.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
@@ -173,6 +181,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
   if (hudReview) reviewScript=reviewScript.replace('res://tests/fixtures/hud_reference.gd','res://_hud_reference.gd');
+  if (deathReview) reviewScript=deathTools.fixturePaths(reviewScript);
   if (flatSurface) {
     const anchor='\tget_tree().current_scene = game\n';
     assert.equal(reviewScript.split(anchor).length,2,'One fully constructed and batched review world');
@@ -202,7 +211,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const engine = {template:engineTemplate ? path.basename(engineTemplate) : 'official 4.7.2',
     wasm_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.wasm'))).digest('hex'),
     js_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.js'))).digest('hex')};
-  const args = ['--','--test'];
+  const args = deathReview ? ['--fixed-fps','60','--','--test'] : ['--','--test'];
   if (reportedView) args.push('--reported-view',`--width=${reportedView.render.viewport[0]}`,`--height=${reportedView.render.viewport[1]}`);
   if (operatorMotion) args.push('--operator-motion');
   if (process.argv.includes('--diagnostic-no-shadows')) args.push('--diagnostic-no-shadows');
@@ -247,14 +256,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
-    if (operatorMotion) {
+    if (operatorMotion || deathReview) {
       const partial=new Map();
       await page.exposeFunction('saveMotionCapture',capture=>{
         assert.match(capture.name,/^[a-z0-9-]+$/);
         fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
         const {png,...data}=capture;
         partial.set(capture.name,data);
-        fs.writeFileSync(path.join(artifacts,'motion-review.json'),JSON.stringify([...partial.values()],null,2)+'\n');
+        fs.writeFileSync(path.join(artifacts,deathReview ? 'death-review-captures.json' : 'motion-review.json'),JSON.stringify([...partial.values()],null,2)+'\n');
       });
     }
     if (ssaoUnroll) {
@@ -269,7 +278,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
-    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView) {
+    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView || deathReview) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -324,8 +333,34 @@ const { launchBrowser } = require('../../scripts/browser-options');
       fs.writeFileSync(path.join(artifacts,'render.cpuprofile'),JSON.stringify(profile));
       console.log('CPU sampling profile saved (includes startup, warmup and captures):',path.join(artifacts,'render.cpuprofile'));
     }
-    assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
     const captures = await page.evaluate(() => window.mapReviewCaptures);
+    if (deathReview) {
+      // Evidence is durable before any validator/encoder can reject the run.
+      // This branch intentionally never enters the old operator validators.
+      for (const capture of captures) {
+        assert.match(capture.name,/^[a-z0-9-]+$/);
+        fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+      }
+      const summary=await page.evaluate(() => window.deathReviewSummary);
+      fs.writeFileSync(path.join(artifacts,'death-review.json'),JSON.stringify({summary,captures:captures.map(({png,...data})=>data)},null,2)+'\n');
+      fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,args,death_review:true,staged:true,
+        measurement:'Offline native-physics pose replay, not gameplay/FPS',captures:captures.map(({png,...data})=>data)},null,2)+'\n');
+      const video=deathTools.encodeReplay(artifacts);
+      try {
+        const report=deathTools.validateReview(captures,summary);
+        assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
+        assert.deepEqual(failures,[]);
+        assert.ok(logs.some(line=>line.includes('DEATH_REVIEW_OK captures=108 failures=0')),'Completed death fixture sentinel');
+        assert.equal(video.encoded,true,'All 90 offline replay frames encoded as VP9');
+        fs.writeFileSync(path.join(artifacts,'death-review-validation.json'),JSON.stringify({valid:true,...report},null,2)+'\n');
+      } catch (error) {
+        fs.writeFileSync(path.join(artifacts,'death-review-validation.json'),JSON.stringify({valid:false,error:String(error)},null,2)+'\n');
+        throw error;
+      }
+      console.log('PASS: six isolated native-sleep death cases, 108 PNGs and 30 fps VP9 offline pose replay; not gameplay/FPS. Artifacts:',artifacts);
+      return;
+    }
+    assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
     if (operatorMotion) {
       // Preserve screenshots/palette evidence even if a later guard rejects a
       // shader, skin registration or pose, so failures remain inspectable.
@@ -570,9 +605,17 @@ const { launchBrowser } = require('../../scripts/browser-options');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
     console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'eighteen existing operator views plus twelve diagnostic wall-death views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+  } catch (error) {
+    if (deathReview) fs.writeFileSync(path.join(artifacts,'death-review-failure.json'),JSON.stringify({error:String(error),failures},null,2)+'\n');
+    throw error;
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');
+    // A later case may fail after all clip frames have already streamed out.
+    if (deathReview && !fs.existsSync(path.join(artifacts,'death-replay-video.json'))) {
+      try { deathTools.encodeReplay(artifacts); }
+      catch (error) { fs.writeFileSync(path.join(artifacts,'death-replay-encode.log'),String(error)+'\n'); }
+    }
     await browser?.close();
     server.close();
   }
