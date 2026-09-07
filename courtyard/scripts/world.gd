@@ -6,11 +6,7 @@ const Crate = preload("res://scripts/crate_mesh.gd")
 const BATCH_CELL_SIZE := 8.0
 # Experimental until repeated same-quality timings show a net benefit.
 const CONSOLIDATE_STANDARD_COLORS := false
-const PLASTER = preload("res://shaders/plaster.gdshader")
-const SURFACE = preload("res://shaders/surface.gdshader")
-const WALL_DIFF = preload("res://assets/textures/concrete_wall_001_diff_1k.jpg")
-const WALL_NORMAL = preload("res://assets/textures/concrete_wall_001_nor_gl_1k.jpg")
-const WALL_ARM = preload("res://assets/textures/concrete_wall_001_arm_1k.jpg")
+const SURFACE = preload("res://shaders/world_surface.gdshader")
 const FLOOR_DIFF = preload("res://assets/textures/concrete_floor_diff_1k.jpg")
 const FLOOR_NORMAL = preload("res://assets/textures/concrete_floor_nor_gl_1k.jpg")
 const FLOOR_ARM = preload("res://assets/textures/concrete_floor_arm_1k.jpg")
@@ -19,12 +15,13 @@ var rng := RandomNumberGenerator.new()
 var batching: Dictionary = {}
 var impact_mesh: BoxMesh
 
-func material(color: Color, metal: float = 0.0) -> StandardMaterial3D:
-	var key := str(color) + str(metal)
+func material(color: Color, metal: float = 0.0, roughness_override: float = -1.0) -> StandardMaterial3D:
+	var roughness := roughness_override if roughness_override >= 0.0 else (0.78 if metal == 0.0 else 0.42)
+	var key := str(color) + "/" + str(metal) + "/" + str(roughness)
 	if not materials.has(key):
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = color
-		mat.roughness = 0.78 if metal == 0.0 else 0.42
+		mat.roughness = roughness
 		mat.metallic = metal
 		materials[key] = mat
 	return materials[key]
@@ -32,22 +29,20 @@ func material(color: Color, metal: float = 0.0) -> StandardMaterial3D:
 func stone(color: Color, masonry: float = 0.0) -> Material:
 	var key := "stone/" + str(color) + "/" + str(masonry)
 	if materials.has(key): return materials[key]
-	if masonry > 0 and masonry < 1:
-		var brick := ShaderMaterial.new()
-		brick.shader = PLASTER
-		brick.set_shader_parameter("tint", color)
-		brick.set_shader_parameter("masonry", masonry)
-		materials[key] = brick
-		return brick
 	var floor_surface := masonry == 1.0
+	var is_masonry := masonry > 0.0 and masonry < 1.0
 	var mat := ShaderMaterial.new()
 	mat.shader = SURFACE
-	mat.set_shader_parameter("tint", color.lightened(0.15))
-	mat.set_shader_parameter("diffuse_map", FLOOR_DIFF if floor_surface else WALL_DIFF)
-	mat.set_shader_parameter("normal_map", FLOOR_NORMAL if floor_surface else WALL_NORMAL)
-	mat.set_shader_parameter("arm_map", FLOOR_ARM if floor_surface else WALL_ARM)
-	mat.set_shader_parameter("normal_strength", 0.55 if floor_surface else 0.5)
-	mat.set_shader_parameter("texture_scale", 0.32 if floor_surface else 0.25)
+	mat.set_shader_parameter("tint", color)
+	mat.set_shader_parameter("base_tint", color.lerp(Color("918c79"), 0.48))
+	# Limewash, cut stone and paving share the existing CC0 mineral maps.
+	mat.set_shader_parameter("diffuse_map", FLOOR_DIFF)
+	mat.set_shader_parameter("normal_map", FLOOR_NORMAL)
+	mat.set_shader_parameter("arm_map", FLOOR_ARM)
+	mat.set_shader_parameter("normal_strength", 0.64 if floor_surface else (0.42 if is_masonry else 0.30))
+	mat.set_shader_parameter("texture_scale", 0.40 if floor_surface else 0.58)
+	mat.set_shader_parameter("floor_surface", floor_surface)
+	mat.set_shader_parameter("masonry", masonry if is_masonry else 0.0)
 	materials[key] = mat
 	return mat
 
@@ -222,24 +217,24 @@ func lighting() -> void:
 	var environment := Environment.new()
 	var sky := Sky.new()
 	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color("457599")
-	sky_material.sky_horizon_color = Color("d6c8a3")
-	sky_material.ground_bottom_color = Color("796b56")
-	sky_material.ground_horizon_color = Color("cfbea0")
+	sky_material.sky_top_color = Color("407aa0")
+	sky_material.sky_horizon_color = Color("ded5bf")
+	sky_material.ground_bottom_color = Color("817d6b")
+	sky_material.ground_horizon_color = Color("c7bea8")
 	sky_material.sun_angle_max = 4.0
 	sky.sky_material = sky_material
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("adc5d2")
-	environment.ambient_light_energy = 0.40
+	environment.ambient_light_color = Color("b7cbd5")
+	environment.ambient_light_energy = 0.48
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	environment.tonemap_exposure = 0.95
+	environment.tonemap_exposure = 0.98
 	environment.fog_enabled = true
-	environment.fog_light_color = Color("c4b493")
-	environment.fog_density = 0.0016
-	environment.fog_sky_affect = 0.15
+	environment.fog_light_color = Color("cec5b1")
+	environment.fog_density = 0.0018
+	environment.fog_sky_affect = 0.18
 	# Compatibility gained SSAO in Godot 4.6: this is an expensive real
 	# full-screen pass in our WebGL build, not a skipped desktop-only setting.
 	# High is the default; lower-cost presets are explicit user choices.
@@ -274,15 +269,15 @@ func ground() -> void:
 	surface.generate_normals()
 	var ground_mesh := MeshInstance3D.new()
 	ground_mesh.mesh = surface.commit()
-	ground_mesh.material_override = stone(Color("aaa18b"), 1.0)
+	ground_mesh.material_override = stone(Color("b5aa95"), 1.0)
 	add_child(ground_mesh)
 	ground_mesh.create_trimesh_collision()
-	box(Vector3(0, -1.1, 0), Vector3(160, 1, 160), stone(Color("b5a07b")), true)
+	box(Vector3(0, -1.1, 0), Vector3(160, 1, 160), stone(Color("b7aa92")), true)
 
 func buildings() -> void:
 	var done: Dictionary = {}
-	var wall_mats := [stone(Color("c5af88")), stone(Color("b6a287")), stone(Color("cab99b")), stone(Color("aa9276"), 0.6)]
-	var trim := material(Color("dac6a0"))
+	var wall_mats := [stone(Color("d2c6b2")), stone(Color("c9bda9")), stone(Color("e0d4be")), stone(Color("b6a58b"), 0.6)]
+	var trim := material(Color("d4ccb9"), 0.0, 0.86)
 	for z in range(-44, 46):
 		for x in range(-44, 44):
 			var p := Vector2i(x, z)
@@ -308,8 +303,8 @@ func buildings() -> void:
 			box(center, Vector3(width, h + 1, depth), wall_mats[rng.randi_range(0, 3)], true)
 			box(Vector3(center.x, h - 0.18, center.z), Vector3(width + 0.12, 0.25, depth + 0.12), trim)
 	# Windows are placed on exposed facades, never loose floating props.
-	var shutter := material(Color("375967"))
-	var dark := material(Color("28353c"))
+	var shutter := material(Color("326a75"), 0.0, 0.86)
+	var dark := material(Color("24353b"), 0.0, 0.86)
 	for x in range(-42, 43):
 		for z in range(-42, 44):
 			if (x + z * 3) % 6 != 0 or not Layout.inside(Vector2(x + 0.5, z + 0.5)):
@@ -343,7 +338,7 @@ func arch(at: Vector3, yaw: float, width: float = 8.0) -> void:
 	add_child(parent)
 	parent.position = at
 	parent.rotation.y = yaw
-	var mat := stone(Color("bda582"), 0.7)
+	var mat := stone(Color("cbbb9e"), 0.7)
 	# Decorative arch stays outside the navigation clearance and above heads.
 	for i in 13:
 		var angle := float(i) / 12 * PI
@@ -365,7 +360,7 @@ func landmarks() -> void:
 	arch(Layout.on_floor(Vector3(28, 0, 18)), 0)
 	arch(Vector3(-33, 0, -15), 0, 9.0)
 	arch(Vector3(1, 0, -21), 0, 9.0)
-	var sandstone := stone(Color("bba580"))
+	var sandstone := stone(Color("cabc9f"))
 	# Roofed tunnel with warm lamps and real cover from the sun.
 	box(Vector3(-33, 4.8, 2), Vector3(10, 0.55, 32), sandstone, true)
 	box(Vector3(-17, 4.2, 6), Vector3(22, 0.4, 8), sandstone, true)
@@ -391,7 +386,7 @@ func landmarks() -> void:
 		var angle := float(index) / 22 * TAU
 		var at := Vector3(cos(angle) * 68, 0, sin(angle) * 67)
 		var height := rng.randf_range(8, 18)
-		var mountain := cylinder(at + Vector3.UP * (height * 0.5 - 2), rng.randf_range(12, 20), 1, height, stone(Color("ac9a7a")))
+		var mountain := cylinder(at + Vector3.UP * (height * 0.5 - 2), rng.randf_range(12, 20), 1, height, stone(Color("aab0a4")))
 		mountain.scale.z = 0.7
 		mountain.rotation.y = angle
 	cylinder(Vector3(-45, 8, -32), 2.0, 1.7, 16, sandstone)
@@ -412,7 +407,7 @@ func palm(at: Vector3) -> void:
 
 func doors() -> void:
 	# Partly open reinforced leaves, with shared rotated collision/nav footprints.
-	var iron := material(Color("38403b"), 0.62)
+	var iron := material(Color("3d4847"), 0.62, 0.66)
 	for index in Layout.DOORS.size():
 		var door: Dictionary = Layout.DOORS[index]
 		var hinge: Vector2 = door.hinge
@@ -424,11 +419,11 @@ func doors() -> void:
 		frame.name = "DoorLeaf%d" % index
 		frame.position = Vector3(hinge.x,base,hinge.y)
 		frame.rotation.y = door.yaw
-		var wood := material(Color("695138") if index % 2 == 0 else Color("735c41"))
+		var wood := material(Color("634630") if index % 2 == 0 else Color("705039"), 0.0, 0.86)
 		box(Vector3(center_x,1.55,0),Vector3(width,3.1,0.30),wood,true,frame)
 		for i in 7:
 			var x := center_x + (float(i)+0.5)*width/7.0-width*0.5
-			var plank := material(Color("816446").darkened(float(i % 3) * 0.055))
+			var plank := material(Color("79563b").darkened(float(i % 3) * 0.055), 0.0, 0.86)
 			box(Vector3(x,1.55,0),Vector3(width/7-0.025,3.03,0.312),plank,false,frame)
 			for height in [0.4, 2.45]:
 				for side in [-1,1]: box(Vector3(x,height,side*0.18),Vector3(0.085,0.085,0.035),iron,false,frame)
@@ -439,11 +434,11 @@ func doors() -> void:
 func ct_house() -> void:
 	# Original modern desert residence over a shaded, open CT undercroft.
 	# Upper mass is real cover; all ground supports also exist in Layout.clear.
-	var plaster := stone(Color("d5c7b3"))
-	var lower := stone(Color("adaba0"))
-	var teal := material(Color("486c72"))
-	var trim := material(Color("e1d7c3"))
-	var dark := material(Color("303e43"))
+	var plaster := stone(Color("e4dfd2"))
+	var lower := stone(Color("a9b5b2"))
+	var teal := material(Color("437c83"), 0.0, 0.86)
+	var trim := material(Color("dedbd0"), 0.0, 0.86)
+	var dark := material(Color("293e43"), 0.0, 0.86)
 	var iron := material(Color("475458"),0.35)
 	# The east end crosses the 2.2 m A ramp: retain full standing clearance.
 	var slab := box(Vector3(2,4.95,-32.5),Vector3(20,0.45,9.5),lower,true)

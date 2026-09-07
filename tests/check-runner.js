@@ -37,6 +37,7 @@ const baseline = [
   'feet|gd|FEET|60|test|-|feet',
   'map_update|gd|MAP_UPDATE|60|test|-|map',
   'material_batches|gd|MATERIAL_BATCHES|60|test|-|material-batches',
+  'world_visuals|gd|WORLD_VISUALS|-|-|-|world-visuals',
   'crate_mesh|gd|CRATE_MESH|-|-|20s|crate-mesh',
   'input|gd|INPUT|60|test|-|input',
   'combat|gd|COMBAT|60|test|-|combat',

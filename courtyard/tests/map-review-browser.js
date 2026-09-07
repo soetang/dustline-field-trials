@@ -43,9 +43,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const ssaoUnroll = process.argv.includes('--ssao-unroll');
   const operatorSurface = process.argv.includes('--operator-surface');
   const flatSurface = process.argv.includes('--flat-surface');
-  const worldVisuals = process.argv.includes('--world-visuals');
-  if (worldVisuals) assert.ok(process.argv.slice(2).every(arg=>['--world-visuals','--capture'].includes(arg)),
-    'World visuals use the isolated official-engine map views with unchanged High quality');
+  assert.ok(!process.argv.includes('--world-visuals'),'World visuals are now production defaults; use the normal map review');
   assert.ok(!flatSurface || (!hudReview && !wallReview && !gameplayProfile && !engineLifecycle && !operatorSurface && !ssaoUnroll && !presentationCache && !gpuTiming &&
     !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
     'Flat-face shader review requires an isolated official-engine High map or render fixture');
@@ -97,13 +95,6 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (deathReview) {
     fs.copyFileSync(path.join(project,'engine/experiments/death_physics.gd'),path.join(reviewProject,'_death_physics.gd'));
     fs.copyFileSync(path.join(project,'tests/fixtures/death_geometry.gd'),path.join(reviewProject,'_death_geometry.gd'));
-  }
-  if (worldVisuals) {
-    fs.copyFileSync(path.join(project,'engine/experiments/world_visuals.gdshader'),path.join(reviewProject,'_world_visuals.gdshader'));
-    const source=fs.readFileSync(path.join(project,'engine/experiments/world_visuals.gd'),'utf8');
-    const shaderPath='res://engine/experiments/world_visuals.gdshader';
-    assert.equal(source.split(shaderPath).length,2,'Exactly one isolated world shader reference');
-    fs.writeFileSync(path.join(reviewProject,'_world_visuals.gd'),source.replace(shaderPath,'res://_world_visuals.gdshader'));
   }
   if (flatSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/flat_surface.gdshader'),path.join(reviewProject,'_flat_surface.gdshader'));
@@ -200,16 +191,6 @@ const { launchBrowser } = require('../../scripts/browser-options');
     .replaceAll('quit(','get_tree().quit(');
   if (hudReview) reviewScript=reviewScript.replace('res://tests/fixtures/hud_reference.gd','res://_hud_reference.gd');
   if (deathReview) reviewScript=deathTools.fixturePaths(reviewScript);
-  if (worldVisuals) {
-    const anchor='\tget_tree().current_scene = game\n';
-    assert.equal(reviewScript.split(anchor).length,2,'One constructed static review world');
-    reviewScript=reviewScript.replace('extends Node\n','extends Node\n\nvar world_visuals_probe\n');
-    reviewScript=reviewScript.replace(anchor,anchor+
-      '\tworld_visuals_probe = preload("res://_world_visuals.gd").new()\n'+
-      '\tvar world_visuals_result: Dictionary = world_visuals_probe.apply(game)\n'+
-      '\tJavaScriptBridge.eval("window.worldVisualsResult="+JSON.stringify(world_visuals_result),true)\n'+
-      '\tprint("WORLD_VISUALS_READY ",JSON.stringify(world_visuals_result))\n');
-  }
   if (flatSurface) {
     const anchor='\tget_tree().current_scene = game\n';
     assert.equal(reviewScript.split(anchor).length,2,'One fully constructed and batched review world');
@@ -307,7 +288,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (engineLifecycle || depthCopyReview || engineMapReview) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
-    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView || deathReview || depthCopyReview || engineMapReview || worldVisuals) {
+    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView || deathReview || depthCopyReview || engineMapReview) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -646,21 +627,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.deepEqual(capture.render.render_3d,capture.render.viewport_pixels,'High does not downscale the actual viewport');
       }
     }
-    const worldVisualsState = worldVisuals ? await page.evaluate(()=>window.worldVisualsResult) : null;
-    if (worldVisuals) {
-      assert.equal(worldVisualsState?.error,'','World-wide material candidate applied successfully');
-      assert.ok(worldVisualsState.changed_materials > 0 && worldVisualsState.changed_instances > 0);
-      for (const field of ['geometry_unchanged','batching_unchanged','quality_unchanged','ssao_unchanged'])
-        assert.equal(worldVisualsState[field],true,field);
-      for (const field of ['mesh_instances','multimesh_instances','multimesh_elements','static_bodies','lights','shadow_lights','surface_bindings'])
-        assert.equal(worldVisualsState.before[field],worldVisualsState.after[field],field);
-      assert.equal(worldVisualsState.new_texture_resources,0);
-      assert.equal(worldVisualsState.extra_passes,0);
-      assert.equal(worldVisualsState.surface_texture_reads,3);
-    }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
       operator_surface:operatorSurface,operator_motion:operatorMotion,flat_surface:flatSurfaceState,reported_view:reportedView,
-      world_visuals:worldVisualsState,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));

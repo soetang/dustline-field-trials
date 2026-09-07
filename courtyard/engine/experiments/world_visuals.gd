@@ -1,10 +1,15 @@
 extends RefCounted
 
-# Explicit test-only art direction, applied after the production world batches.
+# Archived, reviewed art direction for the pre-0.4.16 world only.
 # Resource clones preserve original materials/sky for a paired remote review.
 # No new nodes, lights, passes, textures, geometry or production hooks.
 const World = preload("res://scripts/world.gd")
 const SHADER = preload("res://engine/experiments/world_visuals.gdshader")
+const LEGACY_SURFACE = preload("res://shaders/surface.gdshader")
+const LEGACY_PLASTER = preload("res://shaders/plaster.gdshader")
+const WALL_DIFF = preload("res://assets/textures/concrete_wall_001_diff_1k.jpg")
+const WALL_NORMAL = preload("res://assets/textures/concrete_wall_001_nor_gl_1k.jpg")
+const WALL_ARM = preload("res://assets/textures/concrete_wall_001_arm_1k.jpg")
 const NAME := "chalk-and-teal-courtyard-v1"
 const WALL_PALETTE := {
 	"c5af88":"d2c6b2", "b6a287":"c9bda9", "cab99b":"e0d4be",
@@ -82,13 +87,13 @@ func replacement(original: Material) -> Material:
 	if _materials.has(original): return _materials[original]
 	var candidate: Material
 	if original is ShaderMaterial:
-		var is_surface: bool = original.shader == World.SURFACE
-		var is_masonry: bool = original.shader == World.PLASTER
+		var is_surface: bool = original.shader == LEGACY_SURFACE
+		var is_masonry: bool = original.shader == LEGACY_PLASTER
 		if not is_surface and not is_masonry: return null # Crates/other shader families stay authored.
 		var original_tint: Variant = original.get_shader_parameter("tint")
 		if not original_tint is Color or original_tint.a != 1.0: return null
 		var floor_surface: bool = is_surface and original.get_shader_parameter("diffuse_map") == World.FLOOR_DIFF
-		if is_surface and not floor_surface and original.get_shader_parameter("diffuse_map") != World.WALL_DIFF: return null
+		if is_surface and not floor_surface and original.get_shader_parameter("diffuse_map") != WALL_DIFF: return null
 		var tint: Color = wall_color(original_tint)
 		var masonry := 0.0
 		if floor_surface: tint = Color("b5aa95")
@@ -135,6 +140,13 @@ func apply(game: Node3D) -> Dictionary:
 		result.error = "invalid_game"
 		return result
 	var world: Node3D = game.world
+	# Do not interpret the promoted architecture's shared mineral map as floor.
+	# The old opt-in runner must fail visibly, not recolor an already-styled world.
+	for node in world.find_children("*","GeometryInstance3D",true,false):
+		var material: Material = node.material_override
+		if material is ShaderMaterial and material.shader == World.SURFACE and World.SURFACE != LEGACY_SURFACE:
+			result.error = "already_promoted"
+			return result
 	var environments := world.find_children("*","WorldEnvironment",true,false)
 	if environments.size() != 1 or environments[0].environment == null \
 			or environments[0].environment.sky == null or not environments[0].environment.sky.sky_material is ProceduralSkyMaterial:

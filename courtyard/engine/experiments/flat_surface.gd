@@ -3,6 +3,8 @@ extends RefCounted
 # Explicit, reversible experiment: call apply() only after static world batching.
 # There are no production hooks. Keep this instance alive until restore(). Static
 # geometry/material parameters must remain unchanged during the comparison.
+# Legacy pre-0.4.16 shader only. The promoted mineral world is ineligible;
+# its different fragment arithmetic has not been proven by this experiment.
 const SOURCE = preload("res://shaders/surface.gdshader")
 const CANDIDATE = preload("res://engine/experiments/flat_surface.gdshader")
 const SOURCE_SHA256 := "5e0181f07b1b408fcecc91d36b6cd91216d4200ac75792628860c2196c933a3b"

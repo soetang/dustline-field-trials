@@ -152,7 +152,7 @@ func check_fixture() -> void:
 	floor_material.set_shader_parameter("diffuse_map", World.FLOOR_DIFF)
 	unchanged.append(add_mesh(fixture, BoxMesh.new(), floor_material))
 	var plaster := ShaderMaterial.new()
-	plaster.shader = World.PLASTER
+	plaster.shader = preload("res://shaders/plaster.gdshader")
 	unchanged.append(add_mesh(fixture, BoxMesh.new(), plaster))
 	unchanged.append(add_mesh(fixture, BoxMesh.new(), StandardMaterial3D.new()))
 	var copied_source: ShaderMaterial = material.duplicate(false)
@@ -264,30 +264,30 @@ func check_world() -> void:
 		saved.append({"node": node, "material": node.material_override, "transform": node.global_transform, "shadow": node.cast_shadow})
 	var probe := Probe.new()
 	var result := probe.apply(world)
-	check(result.error == "" and result.changed > 0 and result.multimeshes > 0, "authored world has eligible wall batches")
+	check(result.error == "" and result.changed == 0 and result.multimeshes == 0, "promoted world is outside the pinned legacy shader experiment")
 	check(world.batching == batches and world.find_children("*", "StaticBody3D", true, false) == bodies and bodies.size() == 53, "all authored batches and 53 collider identities retained")
 	var all_preserved := true
 	var floor_preserved := true
 	var floor_count := 0
 	var smooth_count := 0
 	var fallback_count := 0
-	var fallback_eligible := true
+	var fallback_preserved := true
 	for item in saved:
 		var node: GeometryInstance3D = item.node
 		all_preserved = all_preserved and node.global_transform == item.transform and node.cast_shadow == item.shadow
-		if item.material is ShaderMaterial and item.material.shader == Probe.SOURCE and item.material.get_shader_parameter("diffuse_map") == World.FLOOR_DIFF:
+		if item.material is ShaderMaterial and item.material.shader == World.SURFACE and item.material.get_shader_parameter("floor_surface") == true:
 			floor_count += 1
 			floor_preserved = floor_preserved and node.material_override == item.material
 		if node is MeshInstance3D and node.mesh is CylinderMesh:
 			smooth_count += 1
 			all_preserved = all_preserved and node.material_override == item.material
-		# The real fallback floor uses wall textures, unlike the terrain mesh.
+		# New floor and architecture share mineral textures, but not the pinned shader.
 		if node is MeshInstance3D and node.mesh is BoxMesh and node.mesh.size == Vector3(160, 1, 160):
 			fallback_count += 1
-			fallback_eligible = fallback_eligible and Probe.material_supported(item.material) and node.material_override is ShaderMaterial and node.material_override != item.material and node.material_override.shader == Probe.CANDIDATE
+			fallback_preserved = fallback_preserved and not Probe.material_supported(item.material) and node.material_override == item.material
 	check(all_preserved and smooth_count > 0, "authored smooth cylinders, transforms and shadow modes unchanged")
 	check(floor_preserved and floor_count > 0, "authored FLOOR_DIFF terrain materials retain original identities")
-	check(fallback_count == 1 and fallback_eligible, "real 160x1x160 fallback floor is eligible because it uses concrete wall textures")
+	check(fallback_count == 1 and fallback_preserved, "promoted fallback floor is ineligible and unchanged")
 	check(probe.restore() == result.changed, "all authored overrides restored")
 	for item in saved: all_preserved = all_preserved and item.node.material_override == item.material
 	check(all_preserved, "complete world returns to original material identities")
