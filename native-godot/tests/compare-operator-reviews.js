@@ -2,13 +2,81 @@
 
 // Offline artifact comparison. Never launches a browser or touches host input.
 const assert = require('node:assert/strict');
-const NAMES=[...['ct','t'].flatMap(team=>['walk-first','walk-next','aim-high','reload','falling','fallen'].map(pose=>`${team}-${pose}`)),
-  'ct-squad','ct-squad-edge','ct-squad-distance'];
+const KEY_POSES=['walk-first','walk-next','aim-high','reload','falling','fallen'];
+const SLEEP_NAMES=['ct-sleep-entry','ct-sleep-hold','ct-sleep-moved'];
+const NAMES=[...['ct','t'].flatMap(team=>KEY_POSES.map(pose=>`${team}-${pose}`)),
+  'ct-squad','ct-squad-edge','ct-squad-distance',...SLEEP_NAMES];
+
+function validateSleepStages(captures) {
+  const stages=SLEEP_NAMES.map(name=>captures.find(capture=>capture.name===name));
+  assert.ok(stages.every(Boolean),'All three corpse sleep stages are present');
+  const [entry,hold,moved]=stages;
+  for (const capture of stages) {
+    const state=capture.sleep;
+    assert.ok(state && typeof state.sleeping==='boolean','Actual corpse sleep state is reported');
+    assert.ok(Number.isInteger(state.settle_ticks) && state.settle_ticks>=60 && state.settle_ticks<=180,'Sleep must settle within 60–180 actual process ticks');
+    for (const field of ['process_calls','held_frames','skeleton_updates'])
+      assert.ok(Number.isInteger(state[field]) && state[field]>=0,`Nonnegative ${field}`);
+    assert.ok(Number.isFinite(state.corpse_time) && state.corpse_time>=0,'Finite corpse settling time');
+    assert.equal(state.health,0,'A dead actor exercises the production callback');
+    assert.equal(state.paused,true,'The match is paused before every render/capture');
+    assert.ok(Number.isFinite(state.game_elapsed),'Finite match time is reported');
+    assert.equal(state.game_elapsed,entry.sleep.game_elapsed,'No live match ticks run between captures');
+    assert.equal(state.settle_ticks,entry.sleep.settle_ticks,'All stages refer to the same settling interval');
+    assert.equal(capture.companions.length,0,'Only the corpse is visible in sleep stages');
+    assert.equal(capture.skin.palette_valid,true,'Corpse palette matches the actual skeleton');
+    assert.ok(typeof capture.skin.palette_rid==='string' && capture.skin.palette_rid.length>0,'An actual registered palette is reported');
+    assert.equal(capture.skin.palette_rid,entry.skin.palette_rid,'The same registered palette survives sleep and wake');
+    assert.equal(capture.weapon_clear,true,'The frozen and moved corpse weapon remains clear');
+  }
+  assert.equal(entry.sleep.sleeping,true,'The real callback reached sleep');
+  assert.ok(entry.sleep.corpse_time>=1,'The corpse completed the one-second settling interval');
+  assert.ok(entry.sleep.skeleton_updates>0,'Entry capture drains real pending skeleton updates');
+  assert.equal(entry.sleep.process_calls,entry.sleep.settle_ticks,'Entry counts every actual settling callback');
+  assert.equal(entry.sleep.held_frames,0);
+  assert.equal(hold.sleep.sleeping,true,'The held corpse remains asleep');
+  assert.equal(hold.sleep.held_frames,8,'Eight rendered hold frames were exercised');
+  assert.equal(hold.sleep.process_calls,entry.sleep.process_calls+8,'The real callback runs during every held frame');
+  assert.equal(hold.sleep.skeleton_updates,entry.sleep.skeleton_updates,'Sleeping emits no additional skeleton_updated signals');
+  assert.equal(hold.sleep.corpse_time,entry.sleep.corpse_time,'Sleeping does not advance settling time');
+  for (const field of ['build','actor_position','actor_yaw','weapon_clear','weapon_withdrawal'])
+    assert.deepEqual(hold[field],entry[field],`Sleeping preserves ${field}`);
+  for (const field of ['poses','palette','model_transform'])
+    assert.deepEqual(hold.skin[field],entry.skin[field],`Sleeping preserves ${field}`);
+  for (const field of ['quality','ssao','scale_3d','viewport_pixels','primitives','draw_calls'])
+    assert.deepEqual(hold.render[field],entry.render[field],`Sleeping preserves rendered ${field}`);
+  assert.equal(moved.sleep.sleeping,false,'Moving the corpse wakes animation');
+  assert.equal(moved.sleep.held_frames,8);
+  assert.equal(moved.sleep.process_calls,hold.sleep.process_calls+1,'Movement exercises one actual wake callback');
+  assert.ok(moved.sleep.skeleton_updates>hold.sleep.skeleton_updates,'The wake callback produces another skeleton_updated signal');
+  assert.ok(moved.sleep.corpse_time<entry.sleep.corpse_time,'Movement begins a fresh settling interval');
+  assert.ok(Math.abs(moved.actor_position[0]-hold.actor_position[0]-0.2)<0.00001,'The corpse moves exactly 0.2 m along X');
+  assert.deepEqual(moved.actor_position.slice(1),hold.actor_position.slice(1));
+  assert.equal(moved.actor_yaw,hold.actor_yaw);
+  return {held_frames:8,skeleton_updates_while_sleeping:0,
+    skeleton_updates_on_wake:moved.sleep.skeleton_updates-hold.sleep.skeleton_updates,
+    settle_ticks:entry.sleep.settle_ticks};
+}
+
+function compareSleepImages(captures,readImage) {
+  const report=validateSleepStages(captures);
+  const stages=SLEEP_NAMES.map(name=>captures.find(capture=>capture.name===name));
+  const images=stages.map(capture=>readImage(capture.name));
+  for (let i=0;i<images.length;i++) {
+    const image=images[i];
+    assert.deepEqual([image.width,image.height],stages[i].render.viewport_pixels,'Sleep screenshot dimensions match the rendered viewport');
+    assert.deepEqual([image.width,image.height],[images[0].width,images[0].height]);
+    assert.equal(image.data.length,image.width*image.height*4);
+  }
+  assert.ok(images[0].data.equals(images[1].data),'Sleep entry and hold pixels must be exactly equal');
+  assert.ok(!images[1].data.equals(images[2].data),'The moved corpse must visibly update after waking');
+  return {...report,entry_hold_pixel_exact:true,moved_pixels_changed:true};
+}
 
 function validateStages(captures) {
   assert.deepEqual(captures.map(capture=>capture.name),NAMES,'All single- and multi-rig stages captured in order');
   for (const team of ['ct','t']) {
-    const poses=captures.filter(capture=>capture.name.startsWith(team+'-') && !capture.name.includes('squad'));
+    const poses=captures.filter(capture=>KEY_POSES.some(pose=>capture.name===team+'-'+pose));
     for (const key of ['poses','palette'])
       assert.equal(new Set(poses.map(capture=>JSON.stringify(capture.skin[key]))).size,6,`${team}: six distinct ${key}, not frozen animation`);
   }
@@ -18,6 +86,7 @@ function validateStages(captures) {
     assert.equal(new Set(skins.map(skin=>skin.palette_rid)).size,3,'Separate renderer palettes for shared-mesh actors');
     assert.equal(new Set(skins.map(skin=>JSON.stringify(skin.palette))).size,3,'Distinct simultaneous skinning poses');
   }
+  validateSleepStages(captures);
 }
 
 function compareSkin(reference,candidate,name) {
@@ -44,6 +113,7 @@ function comparePair(reference, candidate, a, b) {
   assert.equal(reference.render.scale_3d, 1);
   assert.ok(candidate.render.draw_calls < reference.render.draw_calls, 'Actual rendered draw calls decrease');
   compareSkin(reference.skin,candidate.skin,reference.name);
+  assert.deepEqual(candidate.sleep,reference.sleep,`${reference.name}: same corpse sleep metadata`);
   assert.equal(candidate.companions.length,reference.companions.length);
   for (let i=0; i<reference.companions.length; i++) {
     const a=reference.companions[i], b=candidate.companions[i];
@@ -87,11 +157,16 @@ if (require.main === module) {
   assert.deepEqual(candidate.engine, reference.engine, 'Same exact engine binaries');
   validateStages(reference.captures);
   validateStages(candidate.captures);
+  const sleepReport={};
+  for (const [label,review] of [['reference',reference],['candidate',candidate]])
+    sleepReport[label]=compareSleepImages(review.captures,name=>PNG.sync.read(fs.readFileSync(path.join(review.dir,name+'.png'))));
+  fs.writeFileSync(path.join(candidate.dir,'corpse-sleep-comparison.json'),JSON.stringify(sleepReport,null,2)+'\n');
   const report=reference.captures.map((capture,index)=>comparePair(capture,candidate.captures[index],
     PNG.sync.read(fs.readFileSync(path.join(reference.dir,capture.name+'.png'))),
     PNG.sync.read(fs.readFileSync(path.join(candidate.dir,capture.name+'.png')))));
   fs.writeFileSync(path.join(candidate.dir,'operator-comparison.json'),JSON.stringify(report,null,2)+'\n');
   console.log('OPERATOR_MOTION_COMPARISON: PASS',JSON.stringify(report));
+  console.log('CORPSE_SLEEP_RENDER_COMPARISON: PASS',JSON.stringify(sleepReport));
 }
 
-module.exports = {comparePair,validateStages,NAMES};
+module.exports = {comparePair,validateStages,validateSleepStages,compareSleepImages,NAMES};

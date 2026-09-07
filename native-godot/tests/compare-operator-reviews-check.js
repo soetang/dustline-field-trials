@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {comparePair,validateStages,NAMES} = require('./compare-operator-reviews');
+const {comparePair,validateStages,validateSleepStages,compareSleepImages,NAMES} = require('./compare-operator-reviews');
 let checks=0;
 const check=fn=>{fn();checks++;};
 const original={name:'ct-walk-first',build:'fixture',actor_position:[0,0,0],actor_yaw:0,weapon_clear:true,weapon_withdrawal:0,companions:[],
@@ -43,6 +43,13 @@ const stages=NAMES.map((name,index)=>{
     skin:{...structuredClone(capture.skin),palette_rid:String(id),palette:Array(18).fill([id+20])}}));
   return capture;
 });
+const sleepEntry=stages[15];
+sleepEntry.sleep={sleeping:true,corpse_time:1,settle_ticks:60,process_calls:60,held_frames:0,
+  skeleton_updates:1,health:0,paused:true,game_elapsed:0};
+stages[16]={...structuredClone(sleepEntry),name:'ct-sleep-hold',
+  sleep:{...sleepEntry.sleep,process_calls:68,held_frames:8}};
+stages[17]={...structuredClone(stages[16]),name:'ct-sleep-moved',actor_position:[0.2,0,0],
+  sleep:{...stages[16].sleep,sleeping:false,corpse_time:1/60,process_calls:69,skeleton_updates:2}};
 check(()=>validateStages(stages));
 check(()=>assert.throws(()=>validateStages(stages.slice(0,-1)),/stages captured/));
 const frozen=structuredClone(stages);
@@ -57,4 +64,49 @@ for (const skin of [squadB.skin,...squadB.companions.map(other=>other.skin)]) sk
 check(()=>assert.equal(comparePair(squadA,squadB,image,image).draw_calls_saved,18));
 squadB.companions[1].skin.poses[0]=[99];
 check(()=>assert.throws(()=>comparePair(squadA,squadB,image,image),/companion 1: same poses/));
+const rejectSleep=(change,pattern)=>check(()=>{
+  const value=structuredClone(stages);
+  change(value[15],value[16],value[17]);
+  assert.throws(()=>validateSleepStages(value),pattern);
+});
+rejectSleep(entry=>entry.sleep.sleeping=false,/reached sleep/);
+rejectSleep((entry,hold,moved)=>{for(const stage of [entry,hold,moved]) stage.sleep.settle_ticks=59;},/60–180/);
+rejectSleep((entry,hold,moved)=>{for(const stage of [entry,hold,moved]) stage.sleep.settle_ticks=181;},/60–180/);
+rejectSleep(entry=>entry.sleep.corpse_time=0.99,/one-second settling/);
+rejectSleep(entry=>entry.sleep.skeleton_updates=0,/pending skeleton updates/);
+rejectSleep(entry=>entry.sleep.process_calls--,/every actual settling callback/);
+rejectSleep((entry,hold)=>hold.sleep.sleeping=false,/remains asleep/);
+rejectSleep((entry,hold)=>hold.sleep.held_frames=7,/Eight rendered hold frames/);
+rejectSleep((entry,hold)=>hold.sleep.process_calls--,/every held frame/);
+rejectSleep((entry,hold)=>hold.sleep.skeleton_updates++,/no additional skeleton_updated/);
+rejectSleep((entry,hold)=>hold.sleep.corpse_time+=1/60,/does not advance/);
+rejectSleep((entry,hold)=>hold.skin.poses[0]=[99],/preserves poses/);
+rejectSleep((entry,hold)=>hold.skin.palette[0]=[99],/preserves palette/);
+rejectSleep((entry,hold)=>hold.skin.model_transform=[99],/preserves model_transform/);
+rejectSleep((entry,hold)=>hold.skin.palette_rid='new-palette',/same registered palette/);
+rejectSleep((entry,hold)=>hold.actor_position[0]=0.1,/preserves actor_position/);
+rejectSleep((entry,hold)=>hold.render.draw_calls--,/preserves rendered draw_calls/);
+rejectSleep((entry,hold)=>hold.sleep.paused=false,/match is paused/);
+rejectSleep((entry,hold)=>hold.sleep.game_elapsed+=1/60,/No live match ticks/);
+rejectSleep((entry,hold)=>hold.companions=[{}],/Only the corpse/);
+rejectSleep((entry,hold,moved)=>moved.sleep.sleeping=true,/wakes animation/);
+rejectSleep((entry,hold,moved)=>moved.sleep.process_calls++,/one actual wake callback/);
+rejectSleep((entry,hold,moved)=>moved.sleep.skeleton_updates=hold.sleep.skeleton_updates,/another skeleton_updated/);
+rejectSleep((entry,hold,moved)=>moved.sleep.corpse_time=hold.sleep.corpse_time,/fresh settling interval/);
+rejectSleep((entry,hold,moved)=>moved.actor_position[0]=0.1,/exactly 0.2 m/);
+const movedImage={...image,data:Buffer.from(image.data)};
+movedImage.data[0]++;
+const readSleepImage=name=>name==='ct-sleep-moved' ? movedImage : image;
+check(()=>assert.deepEqual(compareSleepImages(stages,readSleepImage),{held_frames:8,skeleton_updates_while_sleeping:0,
+  skeleton_updates_on_wake:1,settle_ticks:60,entry_hold_pixel_exact:true,moved_pixels_changed:true}));
+check(()=>assert.throws(()=>compareSleepImages(stages,name=>name==='ct-sleep-entry' ? image : movedImage),/pixels must be exactly equal/));
+check(()=>assert.throws(()=>compareSleepImages(stages,()=>image),/must visibly update/));
+check(()=>assert.throws(()=>compareSleepImages(stages,()=>({...image,width:39})),/dimensions match/));
+check(()=>assert.throws(()=>compareSleepImages(stages,()=>({...image,data:Buffer.alloc(4)})),/6400/));
+const sleepCandidate=structuredClone(sleepEntry);
+sleepCandidate.skin.bindings=54;
+sleepCandidate.render.draw_calls=94;
+check(()=>assert.equal(comparePair(sleepEntry,sleepCandidate,image,image).changed_pixels,0));
+sleepCandidate.sleep.skeleton_updates++;
+check(()=>assert.throws(()=>comparePair(sleepEntry,sleepCandidate,image,image),/same corpse sleep metadata/));
 console.log(`OPERATOR_REVIEW_COMPARISON: ${checks}/${checks} passed`);

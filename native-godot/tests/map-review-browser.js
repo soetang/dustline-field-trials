@@ -324,6 +324,12 @@ const { launchBrowser } = require('../../scripts/browser-options');
         fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
       }
       fs.writeFileSync(path.join(artifacts,'motion-review.json'),JSON.stringify(captures.map(({png,...data})=>data),null,2)+'\n');
+      const {PNG}=require('playwright-core/lib/utilsBundle');
+      const {validateStages,compareSleepImages}=require('./compare-operator-reviews');
+      validateStages(captures);
+      const byName=new Map(captures.map(capture=>[capture.name,capture]));
+      const sleepReport=compareSleepImages(captures,name=>PNG.sync.read(Buffer.from(byName.get(name).png,'base64')));
+      fs.writeFileSync(path.join(artifacts,'corpse-sleep-review.json'),JSON.stringify(sleepReport,null,2)+'\n');
     }
     const flatSurfaceState=flatSurface ? await page.evaluate(() => window.flatSurfaceResult) : null;
     if (flatSurface) {
@@ -338,8 +344,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const poses = ['spawn','a-site','long-doors'];
     const modes=process.argv.includes('--compare-ssao') ? ['ao-before','no-ao-before','no-ao-after','ao-after'] : ['high-before','balanced-before','balanced-after','high-after'];
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
-    const expectedWalls=operatorMotion ? [...['ct','t'].flatMap(team=>['walk-first','walk-next','aim-high','reload','falling','fallen'].map(pose=>`${team}-${pose}`)),
-      'ct-squad','ct-squad-edge','ct-squad-distance']
+    const expectedWalls=operatorMotion ? require('./compare-operator-reviews').NAMES
       : ['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
         'door-near','door-far','player-reported'];
     const expectedGameplay = gpuTiming ? ['timer-off-before','timer-on-before','timer-on-after','timer-off-after']
@@ -528,7 +533,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'fifteen staged animated/squad views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'eighteen staged animated/squad/corpse-sleep views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');

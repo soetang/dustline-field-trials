@@ -11,6 +11,7 @@ var report_position := Vector3(-7.674188,0.000625,-33.478039)
 var operator_motion := false
 var model_rests: Dictionary = {}
 var companions: Array[Node3D] = []
+var sleep_probe: Dictionary = {}
 
 func transform_values(value: Transform3D) -> Array[float]:
 	return [value.basis.x.x,value.basis.x.y,value.basis.x.z,
@@ -87,6 +88,11 @@ func capture(name: String, at: Vector3, target: Vector3, first_person: bool = fa
 		for bot in companions:
 			data.companions.append({"position":[bot.position.x,bot.position.y,bot.position.z],
 				"yaw":bot.rotation.y,"skin":skin_snapshot(bot)})
+		if not sleep_probe.is_empty():
+			data.sleep = {"sleeping":actor.rig.corpse_sleeping,"corpse_time":actor.rig.corpse_time,
+				"settle_ticks":sleep_probe.settle_ticks,"process_calls":sleep_probe.process_calls,
+				"held_frames":sleep_probe.held_frames,"skeleton_updates":sleep_probe.skeleton_updates,
+				"health":actor.health,"paused":game.paused,"game_elapsed":game.elapsed}
 	JavaScriptBridge.eval("window.mapReviewCaptures.push("+JSON.stringify(data)+")",true)
 	if operator_motion:
 		# Persist each completed image remotely even if a later stage fails.
@@ -144,6 +150,44 @@ func capture_squad() -> void:
 	await capture("ct-squad-distance",Vector3(1.3,2,-27.5),Vector3(-5.1,1,-32.8))
 	companions.clear()
 
+func process_corpse(bot: Node3D) -> void:
+	# Only this actor's real animation callback runs while unpaused. Restore the
+	# paused match synchronously, before any rendered frame or other callback.
+	game.paused = false
+	bot._process(1.0/60)
+	game.paused = true
+	sleep_probe.process_calls += 1
+
+func capture_sleep(bot: Node3D) -> void:
+	reset_motion(bot,Vector3(-5.6,0,-33.478039))
+	bot.health = 0
+	bot.reload_left = 0
+	bot.look_goal = bot.eye() - bot.global_basis.z * 8
+	bot.rig.last_yaw = bot.rotation.y
+	bot.rig.corpse_sleeping = false
+	bot.rig.corpse_time = 0
+	sleep_probe = {"settle_ticks":0,"process_calls":0,"held_frames":0,"skeleton_updates":0}
+	var count_update := func(): sleep_probe.skeleton_updates += 1
+	bot.rig.skeleton.skeleton_updated.connect(count_update)
+	while not bot.rig.corpse_sleeping and sleep_probe.settle_ticks < 180:
+		process_corpse(bot)
+		sleep_probe.settle_ticks += 1
+	var at := Vector3(-2.6,1.8,-30.7)
+	var target := Vector3(-5.9,0.95,-33.478039)
+	# capture() drains pending skeleton updates before sampling the entry count.
+	# Save evidence even if sleeping failed; the Node validators reject that state.
+	await capture("ct-sleep-entry",at,target)
+	for frame in 8:
+		process_corpse(bot)
+		await RenderingServer.frame_post_draw
+		sleep_probe.held_frames += 1
+	await capture("ct-sleep-hold",at,target)
+	bot.position.x += 0.2
+	process_corpse(bot)
+	await capture("ct-sleep-moved",at,target)
+	bot.rig.skeleton.skeleton_updated.disconnect(count_update)
+	sleep_probe.clear()
+
 func run() -> void:
 	operator_motion = "--operator-motion" in OS.get_cmdline_user_args()
 	root.size = resolution
@@ -167,6 +211,7 @@ func run() -> void:
 		await capture_motion("ct",ct)
 		await capture_motion("t",attacker)
 		await capture_squad()
+		await capture_sleep(ct)
 		print("WALL_REVIEW_OK")
 		JavaScriptBridge.eval("window.mapReviewComplete = true",true)
 		return
