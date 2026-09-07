@@ -11,6 +11,9 @@ func check(ok: bool, label: String) -> void:
 		printerr("FAIL: ", label)
 
 func _initialize() -> void:
+	call_deferred("run")
+
+func run() -> void:
 	Probe.reset(PackedStringArray(["parent", "child"]))
 	check(not Probe.enabled and Probe.depth == 0, "disabled by default; empty stack")
 	Probe.enabled = true
@@ -49,5 +52,34 @@ func _initialize() -> void:
 		" (empty nested-timer bookkeeping; not browser or whole-frame cost)")
 	check(Probe.depth == 0 and Probe.calls[0] == 5000 and Probe.exclusive[0] >= 0, "real clock and repeated scopes stay balanced")
 	Probe.enabled = false
+	Probe.reset_effects()
+	check(Probe.effects_summary().active == 0, "effects start empty independently of CPU recorder")
+	var tracer := Node3D.new()
+	var impact := Node3D.new()
+	root.add_child(tracer)
+	root.add_child(impact)
+	var tracer_timer := create_timer(0.01)
+	var impact_timer := create_timer(8.0)
+	Probe.track_effect(tracer, "tracer", tracer_timer)
+	Probe.track_effect(impact, "impact", impact_timer)
+	tracer_timer.timeout.connect(func(): tracer.queue_free())
+	impact_timer.timeout.connect(func(): impact.queue_free())
+	var effects := Probe.effects_summary()
+	check(effects.created == {"tracer": 1, "impact": 1} and effects.active == 2 and effects.peak == 2,
+		"disabled CPU controls still track actual effect nodes")
+	while Probe.effect_retired.tracer == 0: await process_frame
+	await process_frame
+	check(Probe.effects_summary().retired.tracer == 1 and Probe.active_effects.size() == 1,
+		"deferred deletion retires each effect exactly once")
+	check(effects.retired.tracer == 0 and effects.active == 2, "snapshots do not mutate during later retirement")
+	Probe.expire_effects_for_reset()
+	while not Probe.active_effects.is_empty(): await process_frame
+	await process_frame
+	check(Probe.effects_summary().retired == Probe.effects_summary().created,
+		"owned timer reset runs original callbacks and drains effects")
+	check(Probe.effect_reset_expired == 1, "reset expiry is distinguished from natural timer expiry")
+	Probe.reset_effects()
+	check(Probe.effects_summary().created == {"tracer": 0, "impact": 0} and Probe.effect_peak == 0,
+		"next segment has no live effects or previous counts")
 	print("CPU_PROFILE: %d/%d passed" % [passed, passed + failed])
 	quit(1 if failed else 0)

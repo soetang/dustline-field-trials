@@ -94,7 +94,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   let instrumentation;
   if (gameplayProfile) {
     fs.copyFileSync(path.join(__dirname,'cpu_profile.gd'),path.join(reviewProject,'_cpu_profile.gd'));
-    instrumentation=require('./profile_instrumentation').instrumentProject(reviewProject);
+    instrumentation=require('./profile_instrumentation').instrumentProject(reviewProject,{effects:true});
     fs.writeFileSync(path.join(artifacts,'instrumentation.json'),JSON.stringify(instrumentation,null,2)+'\n');
     // No synthetic mouse capture, even during an automatic BUY -> LIVE
     // transition. Immutable DOM/input denial below remains the second guard.
@@ -409,6 +409,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
         else assert.ok(capture.weapon_withdrawal > 0,`${capture.name}: wall-aware withdrawal is exercised`);
       }
       if (gameplayProfile) {
+        assert.equal(capture.effects_enabled,true,'Production tracers and impact marks are enabled');
+        assert.equal(capture.effects_at_start,0,'No effects leak between comparison windows');
+        assert.equal(capture.effects.reset_expired,0,'No fixture-shortened effect lifetimes inside measurement');
+        assert.equal(capture.unexpected_paused_frames,0,'No focus or visibility pause contaminated the window');
+        assert.equal(capture.silent_test,true,'Focus isolation remains enabled');
+        assert.equal(capture.audio_muted,true,'Fixture never plays host audio');
+        assert.ok(capture.effects.created.tracer > 0 && capture.effects.created.impact > 0,
+          'Real tracers and wall impacts were allocated during this window');
+        assert.equal(capture.effects.active,
+          capture.effects.created.tracer+capture.effects.created.impact-capture.effects.retired.tracer-capture.effects.retired.impact);
         assert.equal(capture.dropped_frames,0,'Profile window did not overflow');
         assert.equal(capture.frames,capture.samples_ms.length);
         assert.equal(capture.camera.mismatched_frames,0,'Observer was current for every measured frame');
@@ -431,7 +441,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.ok(capture.instrumented ? capture.instrumented_self_ms > 0 : capture.instrumented_self_ms === 0);
         for (const row of capture.scopes) {
           assert.ok(row.inclusive_ms >= row.self_ms && row.self_ms >= 0);
-          if (capture.instrumented && ['bot._physics_process','layout.segment_clear','operator_rig.update_pose','hud._draw','hud._draw_after_radar'].includes(row.scope))
+          if (capture.instrumented && ['bot._physics_process','layout.segment_clear','operator_rig.update_pose','hud._draw','hud._draw_after_radar','game.trace','game.impact'].includes(row.scope))
             assert.ok(row.calls > 0,`${row.scope}: core scope exercised`);
         }
       }

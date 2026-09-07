@@ -21,6 +21,49 @@ static var dropped_frames := 0
 static var frames := PackedFloat64Array()
 static var self_frames := PackedFloat64Array()
 static var last_self := PackedInt64Array()
+static var active_effects: Dictionary = {}
+static var effect_created := {"tracer": 0, "impact": 0}
+static var effect_retired := {"tracer": 0, "impact": 0}
+static var effect_reset_expired := 0
+static var effect_peak := 0
+
+static func track_effect(node: Node3D, kind: String, timer: SceneTreeTimer) -> void:
+	assert(node.is_inside_tree() and effect_created.has(kind))
+	var id := node.get_instance_id()
+	assert(not active_effects.has(id))
+	# No node reference; a weak timer reference cannot extend its lifetime.
+	active_effects[id] = {"kind": kind, "timer": weakref(timer)}
+	effect_created[kind] += 1
+	effect_peak = maxi(effect_peak, active_effects.size())
+	node.tree_exiting.connect(retire_effect.bind(id), CONNECT_ONE_SHOT)
+
+static func retire_effect(id: int) -> void:
+	assert(active_effects.has(id))
+	effect_retired[active_effects[id].kind] += 1
+	active_effects.erase(id)
+
+static func expire_effects_for_reset() -> void:
+	# Only at an unmeasured boundary. Original timeout callbacks still perform
+	# the cleanup; this is NOT evidence of natural eight-second expiry.
+	assert(not enabled)
+	for entry in active_effects.values():
+		var timer: SceneTreeTimer = entry.timer.get_ref()
+		if timer != null and timer.time_left > 0:
+			timer.time_left = 0
+			effect_reset_expired += 1
+
+static func reset_effects() -> void:
+	assert(active_effects.is_empty(), "Drain real effect lifetimes before another segment")
+	for kind in effect_created:
+		effect_created[kind] = 0
+		effect_retired[kind] = 0
+	effect_peak = 0
+	effect_reset_expired = 0
+
+static func effects_summary() -> Dictionary:
+	return {"created": effect_created.duplicate(), "retired": effect_retired.duplicate(),
+		"active": active_effects.size(), "peak": effect_peak, "reset_expired": effect_reset_expired,
+		"measurement": "real node lifetimes; tracking overhead is present in every control/profile window"}
 
 static func reset(names: PackedStringArray) -> void:
 	assert(depth == 0, "Cannot reset in a measured scope")

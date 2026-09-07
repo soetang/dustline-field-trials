@@ -41,8 +41,9 @@ static func transform_supported(value: Transform3D) -> bool:
 static func material_supported(material: Material) -> bool:
 	if not material is ShaderMaterial or material.get_script() != null: return false
 	if material.shader != SOURCE or material.next_pass != null: return false
-	# Floor and other surface materials stay on their original shader, even if
-	# they are also used on a BoxMesh (the fallback floor is one such example).
+	# Eligibility follows the concrete wall textures, not the object's purpose.
+	# The large fallback floor uses these textures and qualifies as a flat box;
+	# FLOOR_DIFF terrain and boxes retain their original shader.
 	if material.get_shader_parameter("diffuse_map") != WALL_DIFF: return false
 	if material.get_shader_parameter("normal_map") != WALL_NORMAL: return false
 	if material.get_shader_parameter("arm_map") != WALL_ARM: return false

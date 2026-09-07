@@ -3,6 +3,7 @@ extends SceneTree
 ## Automated AI round, not human play. Temporary-source probes only. The player
 ## stays idle; normal bot AI, physics, animation, HUD and High rendering run.
 ## Audio is muted by --test and mouse capture is removed in this isolated copy.
+## The runner re-enables real tracers/impacts without changing those safeguards.
 const Probe = preload("res://tests/cpu_profile.gd")
 const LABELS: Array[String] = [] # Injected by the temporary-project runner.
 var game: Node3D
@@ -23,6 +24,14 @@ func pin_observer() -> void:
 
 func run_segment(name: String, recording: bool, reference_navigation: bool = false) -> void:
 	game.paused = true
+	# new_round does not delete bullet marks. Expire only this fixture's timers
+	# outside measurement, running original callbacks and deferred deletion.
+	Probe.expire_effects_for_reset()
+	while not Probe.active_effects.is_empty(): await RenderingServer.frame_post_draw
+	await process_frame
+	assert(game.effects.is_empty())
+	Probe.reset_effects()
+	var effects_at_start := Probe.active_effects.size()
 	if "--presentation-abba" in OS.get_cmdline_user_args():
 		JavaScriptBridge.eval("window.presentationStateCache.setEnabled(" + str(name.begins_with("cache-")).to_lower() + ")", true)
 	Probe.reference_navigation = reference_navigation
@@ -53,20 +62,25 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 	var draws := 0.0
 	var primitives := 0.0
 	var camera_mismatches := 0
+	var unexpected_paused_frames := 0
 	# A slow software renderer may produce fewer than twelve frames in a short
 	# diagnostic window. Extend it rather than fabricating samples or weakening
 	# validation; actual wall duration remains in the report and watchdog bounds
 	# a renderer that never produces another frame.
-	while ((Time.get_ticks_usec() - started) < duration * 1000000 or Probe.frame_count < 12) and Probe.frame_count < Probe.FRAME_CAPACITY:
+	while ((Time.get_ticks_usec() - started) < duration * 1000000 or Probe.frame_count < 12 or
+			((Probe.effect_created.tracer == 0 or Probe.effect_created.impact == 0) and game.elapsed < 15)) and Probe.frame_count < Probe.FRAME_CAPACITY:
 		await RenderingServer.frame_post_draw
 		if not observer.current: camera_mismatches += 1
+		if game.paused: unexpected_paused_frames += 1
 		var now := Time.get_ticks_usec()
 		Probe.record_frame(now - previous)
 		previous = now
 		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 		primitives += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+		if unexpected_paused_frames > 0: break # game.elapsed cannot bound a paused fixture
 	Probe.enabled = false
 	game.paused = true
+	var effects_measured := Probe.effects_summary()
 	if gpu_probe: gpu_probe.stop()
 	var physics_end := Engine.get_physics_frames()
 	# Stop browser sampling before summary sorting, JSON/PNG and readback work.
@@ -85,7 +99,11 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		travel += bot.travel
 	result.merge({"name": name, "build": game.BUILD,
 		"navigation": "original exact predicate" if reference_navigation else "production clearance",
-		"fixture": "normal nine-bot round; idle player; fixed observer camera; audio muted; no host input",
+		"fixture": "normal nine-bot round with real tracers/impacts; idle player; fixed observer camera; audio muted; no host input",
+		"effects_enabled": true, "effects_at_start": effects_at_start, "effects": effects_measured,
+		"effects_boundary": "owned timers expired outside measurement; original callbacks drain before reset",
+		"unexpected_paused_frames": unexpected_paused_frames,
+		"silent_test": game.silent_test, "audio_muted": game.sound.muted,
 		"camera": {"position": [observer.global_position.x, observer.global_position.y, observer.global_position.z],
 			"rotation": [observer.global_rotation.x, observer.global_rotation.y, observer.global_rotation.z], "fov": observer.fov,
 			"mismatched_frames": camera_mismatches},

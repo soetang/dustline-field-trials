@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { LABELS, SPECIFICATION, instrumentSource, instrumentProject } = require('./profile_instrumentation');
+const { LABELS, SPECIFICATION, instrumentSource, instrumentProject, enableGameplayEffects } = require('./profile_instrumentation');
 
 let checks = 0;
 function check(fn) { fn(); checks++; }
@@ -120,13 +120,27 @@ function syntheticProject(destination) {
 }
 
 try {
-  check(() => assert.equal(LABELS.length, 23));
-  check(() => assert.deepEqual(SPECIFICATION.map(spec => spec.id), Array.from({ length: 23 }, (_, i) => i)));
+  check(() => assert.equal(LABELS.length, 25));
+  check(() => assert.deepEqual(SPECIFICATION.map(spec => spec.id), Array.from({ length: 25 }, (_, i) => i)));
   check(() => assert.equal(LABELS[17], 'sound.play_at'));
   check(() => assert.equal(LABELS[19], 'spectator._physics_process'));
   check(() => assert.equal(LABELS[20], 'hud._draw'));
   check(() => assert.equal(LABELS[21], 'hud._draw_after_radar'));
   check(() => assert.equal(LABELS[22], 'hud._draw_static_radar'));
+  check(() => assert.deepEqual(LABELS.slice(23), ['game.trace', 'game.impact']));
+  const realGame = fs.readFileSync(path.join(normal, 'scripts/game.gd'), 'utf8');
+  const effectsGame = enableGameplayEffects(realGame);
+  check(() => assert.equal(effectsGame.split('CpuProbe.track_effect(node,').length, 3));
+  check(() => assert.ok(effectsGame.includes('silent_test = "--test" in OS.get_cmdline_user_args()') &&
+    effectsGame.includes('sound.muted = silent_test') &&
+    effectsGame.includes('and not silent_test:\n\t\tset_paused(true)')));
+  check(() => assert.equal(effectsGame
+    .replaceAll('\t# Real effects enabled in this isolated profiling copy.\n', '\tif silent_test: return\n')
+    .replace(/\tvar _profile_effect_timer := get_tree\(\).create_timer\(([^)]+)\)\n\tCpuProbe.track_effect\(node, "(?:tracer|impact)", _profile_effect_timer\)\n\t_profile_effect_timer.timeout.connect\(func\(\):/g,
+      '\tget_tree().create_timer($1).timeout.connect(func():'), realGame));
+  check(() => assert.throws(() => enableGameplayEffects(effectsGame), /visual gate or lifetime/));
+  check(() => assert.throws(() => enableGameplayEffects(realGame.replace('create_timer(8.0)', 'create_timer(5.0)')), /visual gate or lifetime/));
+  check(() => assert.throws(() => enableGameplayEffects(realGame.replace('func trace(', 'func renamed_trace(')), /one original trace/));
   const wrapped = instrumentSource(source, scopes);
   check(() => assert.equal((wrapped.match(/const CpuProbe = preload/g) || []).length, 1));
   check(() => assert.equal((wrapped.match(/CpuProbe.begin\(/g) || []).length, scopes.length));
@@ -168,6 +182,18 @@ try {
   check(() => assert.deepEqual(mapping.labels, LABELS));
   check(() => assert.equal(mapping.files.length, 12));
   for (const spec of SPECIFICATION) check(() => assert.ok(fs.readFileSync(path.join(complete, spec.file), 'utf8').includes(`CpuProbe.begin(${spec.id})`)));
+
+  const effectsProject = path.join(temporary, 'effects-composition');
+  syntheticProject(effectsProject);
+  fs.writeFileSync(path.join(effectsProject, 'scripts/game.gd'), realGame);
+  const effectsMapping = instrumentProject(effectsProject, {effects:true});
+  const composed = fs.readFileSync(path.join(effectsProject, 'scripts/game.gd'), 'utf8');
+  check(() => assert.equal(effectsMapping.effects, true));
+  check(() => assert.equal((composed.match(/const CpuProbe = preload/g) || []).length, 1));
+  check(() => assert.equal((composed.match(/CpuProbe.track_effect\(/g) || []).length, 2));
+  check(() => assert.ok(composed.includes('CpuProbe.begin(23)') && composed.includes('CpuProbe.begin(24)')));
+  check(() => assert.doesNotMatch(composed, /if silent_test: return/));
+  check(() => assert.throws(() => instrumentProject(effectsProject, {effects:true}), /already instrumented/));
 
   const failClosed = path.join(temporary, 'fail-closed');
   syntheticProject(failClosed);

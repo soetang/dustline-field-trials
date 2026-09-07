@@ -208,7 +208,7 @@ func check_fixture() -> void:
 	check(first.material_override.render_priority == material.render_priority and first.material_override.next_pass == null, "non-shader material properties retained")
 	var preserved := true
 	for i in unchanged.size(): preserved = preserved and unchanged[i].material_override == originals[i]
-	check(preserved, "floor/cylinder/shared siblings, alternate shader, skin, overlay and unsupported transforms untouched")
+	check(preserved, "floor-textured boxes, non-box geometry, shared siblings, alternate shader, skin, overlay and unsupported transforms untouched")
 	check(second.global_transform == second_transform and first.mesh.get_rid() == box_rid and first.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "mesh identity, transforms and shadow mode untouched")
 	check(batch.multimesh == multi and multi.buffer == buffer and multi.instance_count == 2 and multi.visible_instance_count == 1 and multi.use_colors and multi.use_custom_data, "MultiMesh object, buffer, visibility, color and custom-data settings untouched")
 	check(probe.apply(fixture).error == "already_applied", "second application cannot allocate duplicate clones")
@@ -270,6 +270,8 @@ func check_world() -> void:
 	var floor_preserved := true
 	var floor_count := 0
 	var smooth_count := 0
+	var fallback_count := 0
+	var fallback_eligible := true
 	for item in saved:
 		var node: GeometryInstance3D = item.node
 		all_preserved = all_preserved and node.global_transform == item.transform and node.cast_shadow == item.shadow
@@ -279,8 +281,13 @@ func check_world() -> void:
 		if node is MeshInstance3D and node.mesh is CylinderMesh:
 			smooth_count += 1
 			all_preserved = all_preserved and node.material_override == item.material
+		# The real fallback floor uses wall textures, unlike the terrain mesh.
+		if node is MeshInstance3D and node.mesh is BoxMesh and node.mesh.size == Vector3(160, 1, 160):
+			fallback_count += 1
+			fallback_eligible = fallback_eligible and Probe.material_supported(item.material) and node.material_override is ShaderMaterial and node.material_override != item.material and node.material_override.shader == Probe.CANDIDATE
 	check(all_preserved and smooth_count > 0, "authored smooth cylinders, transforms and shadow modes unchanged")
-	check(floor_preserved and floor_count > 0, "all authored floor materials retain original identities")
+	check(floor_preserved and floor_count > 0, "authored FLOOR_DIFF terrain materials retain original identities")
+	check(fallback_count == 1 and fallback_eligible, "real 160x1x160 fallback floor is eligible because it uses concrete wall textures")
 	check(probe.restore() == result.changed, "all authored overrides restored")
 	for item in saved: all_preserved = all_preserved and item.node.material_override == item.material
 	check(all_preserved, "complete world returns to original material identities")

@@ -18,6 +18,7 @@ const LABELS = Object.freeze([
   // Retained radar layers draw through separate callbacks. Include both so
   // moving work off the parent CanvasItem cannot appear as a CPU saving.
   'hud._draw_after_radar', 'hud._draw_static_radar',
+  'game.trace', 'game.impact',
 ]);
 const SPECIFICATION = Object.freeze(LABELS.map((label, id) => {
   const [script, name] = label.split('.');
@@ -201,7 +202,31 @@ function instrumentSource(source, specification) {
   return result;
 }
 
-function instrumentProject(projectDir) {
+function enableGameplayEffects(source, prefix = '') {
+  // Preserve --test audio/focus/input isolation. Only these two visual gates
+  // change, only in the copied game; track real nodes, not attempted shots.
+  for (const [name, kind, lifetime] of [['trace', 'tracer', '0.045'], ['impact', 'impact', '8.0']]) {
+    if (prefix !== '' && prefix !== ORIGINAL_PREFIX) fail('unsupported effects function prefix');
+    const declarations = [...codeMask(source).matchAll(new RegExp(`^func ${prefix}${name}\\(`, 'gm'))];
+    if (declarations.length !== 1) fail(`one original ${name} required for effects fixture`);
+    const start = declarations[0].index;
+    const next = codeMask(source).indexOf('\nfunc ', start);
+    const end = next < 0 ? source.length : next;
+    const body = source.slice(start, end);
+    const gate = '\tif silent_test: return\n';
+    const timer = `\tget_tree().create_timer(${lifetime}).timeout.connect(func():`;
+    if (body.split(gate).length !== 2 || body.split(timer).length !== 2)
+      fail(`unsupported ${name} visual gate or lifetime`);
+    const enabled = body.replace(gate, '\t# Real effects enabled in this isolated profiling copy.\n')
+      .replace(timer, `\tvar _profile_effect_timer := get_tree().create_timer(${lifetime})\n`+
+        `\tCpuProbe.track_effect(node, "${kind}", _profile_effect_timer)\n`+
+        '\t_profile_effect_timer.timeout.connect(func():');
+    source = source.slice(0, start) + enabled + source.slice(end);
+  }
+  return source;
+}
+
+function instrumentProject(projectDir, { effects = false } = {}) {
   const root = fs.realpathSync(projectDir);
   const normal = fs.realpathSync(path.resolve(__dirname, '..'));
   if (root === normal || root.startsWith(normal + path.sep) || normal.startsWith(root + path.sep)) fail('refusing the normal project or its ancestor/descendant');
@@ -213,14 +238,16 @@ function instrumentProject(projectDir) {
     const stat = fs.lstatSync(target);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || !fs.realpathSync(target).startsWith(root + path.sep)) fail(`unsafe copied source target: ${file}`);
     const source = fs.readFileSync(target, 'utf8');
-    return { target, source: instrumentSource(source, SPECIFICATION.filter(spec => spec.file === file)) };
+    let instrumented = instrumentSource(source, SPECIFICATION.filter(spec => spec.file === file));
+    if (effects && file === 'scripts/game.gd') instrumented = enableGameplayEffects(instrumented, ORIGINAL_PREFIX);
+    return { target, source: instrumented };
   });
   // Parse every selected signature before touching any file. Unsupported source
   // fails closed instead of leaving a partly instrumented benchmark project.
   for (const item of prepared) fs.writeFileSync(item.target, item.source);
   const mapping = SPECIFICATION.map(spec => ({ ...spec }));
   console.log('CPU_PROFILE_MAPPING', JSON.stringify(mapping));
-  return { mapping, labels: [...LABELS], files };
+  return { mapping, labels: [...LABELS], files, effects };
 }
 
-module.exports = { LABELS, SPECIFICATION, instrumentSource, instrumentProject };
+module.exports = { LABELS, SPECIFICATION, instrumentSource, instrumentProject, enableGameplayEffects };
