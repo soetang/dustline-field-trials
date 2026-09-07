@@ -11,19 +11,24 @@ var warmup := 12
 var resolution := Vector2i(640, 360)
 var frame := 0
 var gpu_probe: RefCounted
+var reported_view: RefCounted
 
 func _initialize() -> void:
 	call_deferred("run")
 
 func animate() -> void:
+	if reported_view:
+		reported_view.animate(game)
+		return
 	frame += 1
 	for bot in game.bots:
 		bot.rig.update_pose(1.0/60, Vector3.ZERO, Vector2(sin(frame * 0.01 + bot.index) * 0.2, 0.2),
 			0, false, false, 0, bot.global_transform, game.Layout.floor_height)
 
 func capture(name: String, at: Vector3, target: Vector3) -> void:
-	camera.position = at
-	camera.look_at(target)
+	if not reported_view:
+		camera.position = at
+		camera.look_at(target)
 	frame = 0
 	print("RENDER_WARMUP ", name, " frames=", warmup)
 	for i in warmup:
@@ -33,7 +38,8 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 		JavaScriptBridge.eval("window.renderProfileName="+JSON.stringify(name)+"; window.renderProfilePhase='ready'",true)
 		while JavaScriptBridge.eval("window.renderProfilePhase",true) != "running":
 			await process_frame
-	if gpu_probe: gpu_probe.start(name, true)
+	if reported_view: reported_view.start_measurement()
+	if gpu_probe: gpu_probe.start(name, not reported_view or name.begins_with("timer-on-"))
 	var times: Array[float] = []
 	var draws := 0.0
 	var primitives := 0.0
@@ -75,8 +81,11 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 		"render_setup_cpu_ms": setup_cpu / samples, "render_cpu_ms": render_cpu / samples,
 		"render_gpu_ms": render_gpu / samples, "zero_timing_means_unavailable": true,
 		"renderer": RenderingServer.get_current_rendering_method(), "batching": game.world.batching}
+	if reported_view:
+		data.fixture = "reported camera and operator counts; staged render, not match replay"
+		data.reported_view = reported_view.details(game)
 	if gpu_probe:
-		data.gpu_timing_requested = true
+		data.gpu_timing_requested = not reported_view or name.begins_with("timer-on-")
 		data.gpu_timing = await gpu_probe.collect(self)
 	print("RENDER_SAMPLE ", JSON.stringify(data))
 	if "--capture" in OS.get_cmdline_user_args():
@@ -87,8 +96,8 @@ func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--samples="): samples = clampi(arg.get_slice("=",1).to_int(),12,3600)
 		if arg.begins_with("--warmup="): warmup = clampi(arg.get_slice("=",1).to_int(),3,600)
-		if arg.begins_with("--width="): resolution.x = clampi(arg.get_slice("=",1).to_int(),160,3840)
-		if arg.begins_with("--height="): resolution.y = clampi(arg.get_slice("=",1).to_int(),90,2160)
+		if arg.begins_with("--width="): resolution.x = clampi(arg.get_slice("=",1).to_int(),2 if "--reported-view" in OS.get_cmdline_user_args() else 160,4096 if "--reported-view" in OS.get_cmdline_user_args() else 3840)
+		if arg.begins_with("--height="): resolution.y = clampi(arg.get_slice("=",1).to_int(),2 if "--reported-view" in OS.get_cmdline_user_args() else 90,2160)
 	root.size = resolution
 	game = load("res://main.tscn").instantiate()
 	root.add_child(game)
@@ -118,6 +127,21 @@ func run() -> void:
 		const ext=gl?.getExtension('WEBGL_debug_renderer_info');
 		window.renderBackend=ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'not exposed';
 	})()""",true)
+	if "--reported-view" in OS.get_cmdline_user_args():
+		reported_view = load("res://_reported_view.gd").new()
+		var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://_reported_view.json"))
+		await physics_frame
+		await process_frame
+		reported_view.configure(game, camera, data)
+		# Four windows bound instrumentation overhead without changing the view,
+		# quality or operator state. There is no claim of a hardware FPS result.
+		var names := ["reported-before", "reported-after"]
+		if gpu_probe: names = ["timer-off-before", "timer-on-before", "timer-on-after", "timer-off-after"]
+		for name in names: await capture(name, Vector3.ZERO, Vector3.ZERO)
+		if gpu_probe: gpu_probe.dispose()
+		print("RENDER_BENCHMARK_OK")
+		JavaScriptBridge.eval("window.mapReviewComplete = true",true)
+		return
 	var poses := [["spawn",Vector3(1,1.65,-33),Vector3(1.5,1.6,-18)],
 		["a-site",Vector3(29,4.05,-29),Vector3(36,3.5,-14)],
 		["long-doors",Vector3(28.5,2.4,22.5),Vector3(28.5,1.9,16.5)]]

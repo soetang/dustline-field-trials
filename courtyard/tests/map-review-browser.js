@@ -15,6 +15,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
 (async () => {
   const project = path.resolve(__dirname, '..');
   const benchmark = process.argv.includes('--benchmark');
+  const reportedViewArg = process.argv.find(arg=>arg.startsWith('--reported-view='));
+  const reportedView = reportedViewArg ? require('./reported-view').parseReport(JSON.parse(fs.readFileSync(reportedViewArg.slice('--reported-view='.length),'utf8'))) : null;
+  assert.ok(!reportedView || (benchmark && !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=|operator-surface|flat-surface|ssao-unroll|presentation-cache|width=|height=)/.test(arg))),
+    'Reported-view benchmark preserves the official engine, reported dimensions and unchanged High graphics');
   const engineLifecycle = process.argv.includes('--engine-lifecycle');
   const expectCachedBackbuffer = process.argv.includes('--expect-cached-backbuffer');
   const wallReview = process.argv.includes('--wall-review');
@@ -71,6 +75,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.mkdirSync(reviewProject);
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
+  if (reportedView) {
+    fs.copyFileSync(path.join(__dirname,'fixtures/reported_view.gd'),path.join(reviewProject,'_reported_view.gd'));
+    fs.writeFileSync(path.join(reviewProject,'_reported_view.json'),JSON.stringify(reportedView)+'\n');
+  }
   if (hudReview) fs.copyFileSync(path.join(project,'tests/fixtures/hud_reference.gd'),path.join(reviewProject,'_hud_reference.gd'));
   if (flatSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/flat_surface.gdshader'),path.join(reviewProject,'_flat_surface.gdshader'));
@@ -144,6 +152,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const settings = fs.readFileSync(path.join(project,'project.godot'),'utf8').replace('run/main_scene="res://main.tscn"','run/main_scene="res://_map_review.tscn"');
   fs.writeFileSync(path.join(reviewProject,'project.godot'),settings);
   let presets = fs.readFileSync(path.join(project,'export_presets.cfg'),'utf8').replaceAll('../.tools/',path.resolve(project,'../.tools')+'/');
+  if (reportedView) presets=presets.replaceAll('include_filter="*.md,*.txt"','include_filter="*.md,*.txt,_reported_view.json"');
   if (engineTemplate) {
     assert.doesNotMatch(engineTemplate,/["\r\n\\]/);
     const templateSetting=/custom_template\/release="[^"\n]*\/web_nothreads_release\.zip"/;
@@ -194,6 +203,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     wasm_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.wasm'))).digest('hex'),
     js_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.js'))).digest('hex')};
   const args = ['--','--test'];
+  if (reportedView) args.push('--reported-view',`--width=${reportedView.render.viewport[0]}`,`--height=${reportedView.render.viewport[1]}`);
   if (operatorMotion) args.push('--operator-motion');
   if (process.argv.includes('--diagnostic-no-shadows')) args.push('--diagnostic-no-shadows');
   if (process.argv.includes('--capture')) args.push('--capture');
@@ -259,7 +269,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
-    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile) {
+    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -346,7 +356,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
       'All nine real operator models use the merged fixture, without silent fallback');
     const poses = ['spawn','a-site','long-doors'];
     const modes=process.argv.includes('--compare-ssao') ? ['ao-before','no-ao-before','no-ao-after','ao-after'] : ['high-before','balanced-before','balanced-after','high-after'];
-    const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
+    const expected = reportedView ? (gpuTiming ? ['timer-off-before','timer-on-before','timer-on-after','timer-off-after'] : ['reported-before','reported-after'])
+      : process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
     const expectedWalls=operatorMotion ? require('./compare-operator-reviews').NAMES
       : ['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
         'door-near','door-far','player-reported'];
@@ -403,6 +414,24 @@ const { launchBrowser } = require('../../scripts/browser-options');
       assert.ok(summary.checks>0);
     }
     if (gameplayProfile) for (const capture of captures) assert.deepEqual(capture.camera,captures[0].camera,'All windows use an identical observer camera');
+    if (reportedView) {
+      fs.writeFileSync(path.join(artifacts,'reported-view.json'),JSON.stringify({report:reportedView,captures:captures.map(({png,...data})=>data)},null,2)+'\n');
+      for (const capture of captures) {
+        if (capture.png) fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+        const state=capture.reported_view;
+        assert.equal(state.source_build,reportedView.build);
+        assert.deepEqual(state.operators,reportedView.operators,'Real rigs match reported living/dead/sleeping totals');
+        assert.equal(state.sleeping_skeleton_updates,0,'Sleeping operators never dirty renderer palettes during measurement');
+        assert.equal(state.sleeping_poses_unchanged,true,'Sleeping operators do not run pose/IK work');
+        for (const field of ['quality','ssao','scale_3d','viewport','viewport_pixels','render_3d'])
+          assert.deepEqual(capture.render[field],reportedView.render[field],`Reported ${field} is preserved`);
+        const close=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-5,`Reported camera component ${actual} agrees with ${expected}`);
+        for (const field of ['fov_degrees','near','far','keep_aspect']) close(state.camera[field],reportedView.camera[field]);
+        state.camera.position_xyz.forEach((value,index)=>close(value,reportedView.camera.position_xyz[index]));
+        state.camera.basis.forEach((column,index)=>column.forEach((value,axis)=>close(value,reportedView.camera.basis[index][axis])));
+        assert.deepEqual(state.camera,captures[0].reported_view.camera,'The camera cannot drift between windows');
+      }
+    }
     for (const capture of captures) {
       assert.match(capture.name,/^[a-z0-9-]+$/);
       if (engineLifecycle) {
@@ -415,7 +444,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       if (gpuTiming) {
         const gpu=capture.gpu_timing;
         assert.ok(gpu && typeof gpu.supported === 'boolean','GPU probe reports availability and sample state');
-        assert.equal(capture.gpu_timing_requested,benchmark || capture.name.startsWith('timer-on-'));
+        assert.equal(capture.gpu_timing_requested,(benchmark && !reportedView) || capture.name.startsWith('timer-on-'));
         assert.equal(gpu.enabled,false,'Sampling stops before summaries and captures');
         assert.equal(gpu.active,false,'No query straddles segment boundaries');
         assert.equal(gpu.stats.errors,0,gpu.last_error || 'No probe exceptions');
@@ -536,7 +565,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
     }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
-      operator_surface:operatorSurface,operator_motion:operatorMotion,flat_surface:flatSurfaceState,
+      operator_surface:operatorSurface,operator_motion:operatorMotion,flat_surface:flatSurfaceState,reported_view:reportedView,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));

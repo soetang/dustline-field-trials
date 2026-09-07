@@ -38,6 +38,8 @@ suites=(
   'audio|gd|AUDIO|60|test|-|audio'
   'rounds|gd|SEEDED_ROUNDS|60|test|-|rounds'
   'performance|gd|PERFORMANCE|60|test|-|performance'
+  'reported_view|gd|REPORTED_VIEW|60|test|-|reported-view'
+  'reported-view|js|-|-|-|-|reported-view-input'
 )
 fast_suites=(verify aim input combat pose_reset corpse_sleep presentation-state-cache gpu-timer-probe)
 

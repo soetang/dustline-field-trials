@@ -41,6 +41,8 @@ const baseline = [
   'audio|gd|AUDIO|60|test|-|audio',
   'rounds|gd|SEEDED_ROUNDS|60|test|-|rounds',
   'performance|gd|PERFORMANCE|60|test|-|performance',
+  'reported_view|gd|REPORTED_VIEW|60|test|-|reported-view',
+  'reported-view|js|-|-|-|-|reported-view-input',
 ].map(row => {
   const [name, kind, sentinel, fps, testFlag, limit, log] = row.split('|');
   return {name, kind, sentinel, fps, testFlag, limit, log};
@@ -141,6 +143,7 @@ if (name !== 'import') console.log((labels[name] || 'NODE_FIXTURE') + ': 1/1 pas
   check(() => expectSelection(run(['--fast']), fast));
   check(() => expectSelection(run(['pose_reset', 'weapon_walls']), ['pose_reset', 'weapon_walls']));
   check(() => expectSelection(run(['compare-operator-reviews', 'crate_mesh']), ['compare-operator-reviews', 'crate_mesh']));
+  check(() => expectSelection(run(['reported_view', 'reported-view']), ['reported_view', 'reported-view']));
   for (const args of [['unknown'], ['aim', 'unknown'], ['--fast', 'aim'], ['--list', 'aim']]) {
     check(() => {
       const result = run(args);
@@ -180,7 +183,18 @@ if (name !== 'import') console.log((labels[name] || 'NODE_FIXTURE') + ': 1/1 pas
     assert.notEqual(result.status, 0);
     assert.deepEqual(result.calls.map(call => call.tool), ['godot', 'timeout', 'godot']);
   });
-  console.log(`CHECK_RUNNER: ${checks}/${checks} passed; 33 default suites/flags, targeted/fast selection, import/error/sentinel/exit checks; no Godot or GPU`);
+  check(() => {
+    const result = run(['reported_view', 'reported-view'], 'reported_view', 'missing');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Missing success sentinel for reported_view/);
+    assert.deepEqual(result.calls.map(call => call.name), ['import', 'reported_view']);
+  });
+  check(() => {
+    const result = run(['reported-view', 'reported_view'], 'reported-view', 'nonzero');
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(result.calls.map(call => call.name), ['import', 'reported-view']);
+  });
+  console.log(`CHECK_RUNNER: ${checks}/${checks} passed; ${baseline.length} default suites/flags, targeted/fast selection, import/error/sentinel/exit checks; no Godot or GPU`);
 } finally {
   fs.rmSync(temporary, {recursive: true, force: true});
 }
