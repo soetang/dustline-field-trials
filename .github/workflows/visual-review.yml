@@ -6,7 +6,7 @@ on:
         description: 'Map/wall screenshots or CPU/GPU-fixture check; not hardware FPS'
         type: choice
         default: map
-        options: [map, walls, crates, operators, hud, surfaces, cpu, gpu, engine]
+        options: [map, walls, crates, operators, operator-motion, hud, surfaces, cpu, gpu, engine]
 permissions:
   contents: read
 concurrency:
@@ -48,6 +48,11 @@ jobs:
             operators)
               node native-godot/tests/map-review-browser.js --wall-review
               node native-godot/tests/map-review-browser.js --wall-review --operator-surface
+              ;;
+            operator-motion)
+              node native-godot/tests/map-review-browser.js --wall-review --operator-motion
+              node native-godot/tests/map-review-browser.js --wall-review --operator-motion --operator-surface
+              node native-godot/tests/compare-operator-reviews.js
               ;;
             engine) node native-godot/tests/map-review-browser.js --engine-lifecycle --capture ;;
             cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;

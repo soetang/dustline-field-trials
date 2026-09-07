@@ -3,9 +3,10 @@ extends RefCounted
 ## TEST ONLY. Call apply(model) after Models.prepare(); an existing rig/flash
 ## is retained, so a test fixture can opt in after the operator is instantiated.
 ## Never mutates the imported mesh/materials, skin, skeleton or node transform.
-## Only immutable load-time geometry is supported; source.changed drops cache.
-## Promotion gap: unioned bone bounds can expand differently during animation,
-## changing the renderer's LOD distance. See the actual-pose bounds regression.
+## Only immutable load-time inputs are supported; mesh/skin.changed drops cache.
+## Each source surface retains separate bone boxes via aliased Skin bindings.
+## This avoids union-before-rotation expansion, not arbitrary float-roundoff
+## differences in grouped AABB merges or LOD decisions exactly on a threshold.
 const SHADER = preload("res://engine/experiments/operator_surface.gdshader")
 # Godot 4.7.2's ARRAY_FLAG_FORMAT_VERSION_2 in rendering_server_enums.h.
 const PACKED_FORMAT_VERSION := 1 << 35
@@ -14,9 +15,9 @@ static var defaults: StandardMaterial3D
 static var shared_material: ShaderMaterial
 static var last_error := ""
 
-static func reject(reason: String) -> ArrayMesh:
+static func reject(reason: String) -> Dictionary:
 	last_error = reason
-	return null
+	return {}
 
 static func material_supported(value: Material) -> bool:
 	if not value is StandardMaterial3D or value.get_script() != null: return false
@@ -43,6 +44,25 @@ static func invalidate(source_id: int) -> void:
 	# An ID binding cannot leave source -> signal -> source reference cycles.
 	var source := instance_from_id(source_id)
 	if source != null: cache.erase(source)
+
+static func invalidate_skin(source_id: int) -> void:
+	var source := instance_from_id(source_id)
+	if source == null: return
+	for mesh in cache.keys():
+		cache[mesh].erase(source)
+		if cache[mesh].is_empty(): cache.erase(mesh)
+
+static func skin_supported(skin: Skin) -> bool:
+	if skin == null or skin.get_script() != null or skin.get_bind_count() == 0: return false
+	for bind in skin.get_bind_count():
+		if skin.get_bind_name(bind).is_empty() and skin.get_bind_bone(bind) < 0: return false
+		var pose := skin.get_bind_pose(bind)
+		if not pose.is_finite() or is_zero_approx(pose.basis.determinant()): return false
+	return true
+
+static func valid_bounds(bounds: AABB) -> bool:
+	return bounds.position.is_finite() and bounds.size.is_finite() \
+		and (bounds.size == Vector3(-1, -1, -1) or (bounds.size.x >= 0 and bounds.size.y >= 0 and bounds.size.z >= 0))
 
 static func valid_indices(indices: PackedInt32Array, count: int) -> bool:
 	if indices.is_empty() or indices.size() % 3: return false
@@ -75,7 +95,7 @@ static func read_lods(data: Dictionary) -> Dictionary:
 		previous = edge
 	return result
 
-static func merge(source: ArrayMesh, materials: Array[Material]) -> ArrayMesh:
+static func merge(source: ArrayMesh, source_skin: Skin, materials: Array[Material]) -> Dictionary:
 	last_error = ""
 	var version := Engine.get_version_info()
 	if version.major != 4 or version.minor != 7 or version.patch != 2:
@@ -84,12 +104,16 @@ static func merge(source: ArrayMesh, materials: Array[Material]) -> ArrayMesh:
 		return reject("Expected multiple material surfaces")
 	if source.get_blend_shape_count() or source.shadow_mesh != null or source.get_script() != null:
 		return reject("Blend shapes, custom shadow mesh or scripted mesh require a separate implementation")
+	if not skin_supported(source_skin): return reject("Invalid source Skin bindings or poses")
+	var bind_count := source_skin.get_bind_count()
+	if bind_count * source.get_surface_count() > 65536:
+		return reject("Aliased bindings exceed the pinned uint16 joint layout")
 	var parameters: Array[Vector2] = []
 	for value in materials:
 		if not material_supported(value): return reject("Unsupported material properties")
 		parameters.append(Vector2(value.roughness, value.metallic))
-	if cache.has(source) and cache[source].parameters == parameters:
-		return cache[source].mesh
+	if cache.has(source) and cache[source].has(source_skin) and cache[source][source_skin].parameters == parameters:
+		return cache[source][source_skin].pair
 
 	var combined: Array = []
 	combined.resize(Mesh.ARRAY_MAX)
@@ -134,12 +158,32 @@ static func merge(source: ArrayMesh, materials: Array[Material]) -> ArrayMesh:
 		# are uncompressed. Decode/re-encode is lossy: retain their exact bytes.
 		raw_positions.append_array(bytes.slice(0, split))
 		raw_normals.append_array(bytes.slice(split))
-		raw_skin.append_array(data.skin_data)
-		for bone in data.bone_aabbs.size():
-			var bounds: AABB = data.bone_aabbs[bone]
-			if bone >= bone_bounds.size(): bone_bounds.append(bounds)
-			elif bounds.size.x >= 0:
-				bone_bounds[bone] = bounds if bone_bounds[bone].size.x < 0 else bone_bounds[bone].merge(bounds)
+		var skin_bytes: PackedByteArray = data.skin_data.duplicate()
+		var joints: PackedInt32Array = arrays[Mesh.ARRAY_BONES].duplicate()
+		var source_bounds: Array = data.get("bone_aabbs", [])
+		if source_bounds.is_empty() or source_bounds.size() > bind_count:
+			return reject("Missing or oversized source bone bounds")
+		var used_bounds := false
+		for bounds: AABB in source_bounds:
+			if not valid_bounds(bounds): return reject("Malformed source bone bounds")
+			used_bounds = used_bounds or (bounds.size.x > 0 and bounds.size.y > 0 and bounds.size.z > 0)
+		if not used_bounds: return reject("Unbounded skin requires per-surface fallback bounds")
+		for vertex in count:
+			for influence in 4:
+				var offset := vertex * 16 + influence * 2
+				var bind := skin_bytes.decode_u16(offset)
+				# Check even zero-weight influences: the vertex shader fetches all four.
+				if bind >= bind_count or bind != joints[vertex * 4 + influence]:
+					return reject("Vertex references an invalid source Skin binding")
+				if skin_bytes.decode_u16(offset + 8) > 0 and (bind >= source_bounds.size() or source_bounds[bind].size == Vector3(-1, -1, -1)):
+					return reject("Weighted joint is missing its source bone bounds")
+				var aliased := bind + surface * bind_count
+				skin_bytes.encode_u16(offset, aliased)
+				joints[vertex * 4 + influence] = aliased
+		raw_skin.append_array(skin_bytes) # The eight weight bytes are never rewritten.
+		arrays[Mesh.ARRAY_BONES] = joints
+		for bind in bind_count:
+			bone_bounds.append(source_bounds[bind] if bind < source_bounds.size() else AABB(Vector3.ZERO, Vector3(-1, -1, -1)))
 		var lods := read_lods(data)
 		if lods.has("invalid"): return reject("Invalid imported LOD data")
 		for edge: float in lods:
@@ -193,10 +237,24 @@ static func merge(source: ArrayMesh, materials: Array[Material]) -> ArrayMesh:
 	result.set("_surfaces", packed)
 	result.custom_aabb = source.custom_aabb
 	result.surface_set_material(0, material())
-	cache[source] = {"parameters": parameters, "mesh": result}
+	var skin := Skin.new()
+	skin.set_bind_count(bind_count * source.get_surface_count())
+	for surface in source.get_surface_count():
+		for bind in bind_count:
+			var alias := surface * bind_count + bind
+			skin.set_bind_bone(alias, source_skin.get_bind_bone(bind))
+			skin.set_bind_name(alias, source_skin.get_bind_name(bind))
+			skin.set_bind_pose(alias, source_skin.get_bind_pose(bind))
+	# Retain only resources, never SkinReferences (which would keep old palettes
+	# registered on individual skeletons after replacing their instance Skin).
+	var pair := {"mesh": result, "skin": skin}
+	if not cache.has(source): cache[source] = {}
+	cache[source][source_skin] = {"parameters": parameters, "pair": pair}
 	var changed := invalidate.bind(source.get_instance_id())
 	if not source.changed.is_connected(changed): source.changed.connect(changed)
-	return result
+	var skin_changed := invalidate_skin.bind(source_skin.get_instance_id())
+	if not source_skin.changed.is_connected(skin_changed): source_skin.changed.connect(skin_changed)
+	return pair
 
 static func apply(model: Node3D) -> bool:
 	last_error = ""
@@ -210,11 +268,32 @@ static func apply(model: Node3D) -> bool:
 	if not node.mesh is ArrayMesh or node.skin == null or node.material_override != null or node.material_overlay != null:
 		last_error = "Expected a skinned ArrayMesh without whole-instance material overrides"
 		return false
+	if not node.is_inside_tree():
+		last_error = "Operator must be in the scene tree"
+		return false
+	var skeleton := node.get_node_or_null(node.skeleton) as Skeleton3D
+	if skeleton == null or not skin_supported(node.skin):
+		last_error = "Missing skeleton or invalid Skin"
+		return false
+	# Actual imported operators are identity children of their Skeleton3D.
+	# Check the local relationship: inverse(world) * world introduces rounding
+	# for perfectly valid rotated/scaled actor ancestors. Pinned 3D ArrayMesh
+	# import also leaves the surface mesh_to_skeleton_xform at identity.
+	if node.get_parent() != skeleton or node.transform != Transform3D.IDENTITY or node.top_level or node.is_scale_disabled():
+		last_error = "Nonidentity mesh-to-skeleton transform is unsupported"
+		return false
+	for bind in node.skin.get_bind_count():
+		var name := node.skin.get_bind_name(bind)
+		var bone := skeleton.find_bone(name) if not name.is_empty() else node.skin.get_bind_bone(bind)
+		if bone < 0 or bone >= skeleton.get_bone_count():
+			last_error = "Skin binding cannot resolve to this Skeleton3D"
+			return false
 	var materials: Array[Material] = []
 	for surface in node.mesh.get_surface_count(): materials.append(node.get_active_material(surface))
-	var result := merge(node.mesh, materials)
-	if result == null: return false
+	var result := merge(node.mesh, node.skin, materials)
+	if result.is_empty(): return false
 	# Only commit after every check and complete construction has succeeded.
 	for surface in node.mesh.get_surface_count(): node.set_surface_override_material(surface, null)
-	node.mesh = result
+	node.skin = result.skin
+	node.mesh = result.mesh
 	return true

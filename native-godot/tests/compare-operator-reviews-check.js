@@ -1,0 +1,60 @@
+'use strict';
+const assert = require('node:assert/strict');
+const {comparePair,validateStages,NAMES} = require('./compare-operator-reviews');
+let checks=0;
+const check=fn=>{fn();checks++;};
+const original={name:'ct-walk-first',build:'fixture',actor_position:[0,0,0],actor_yaw:0,weapon_clear:true,weapon_withdrawal:0,companions:[],
+  render:{quality:'High',ssao:true,scale_3d:1,viewport_pixels:[40,40],primitives:1234,draw_calls:100},
+  skin:{palette_valid:true,bones:18,bindings:18,poses:Array(18).fill([1,2,3]),palette:Array(18).fill([4,5,6]),model_transform:[7,8,9]}};
+const candidate=structuredClone(original);
+candidate.render.draw_calls=94;
+candidate.skin.bindings=54;
+const image={width:40,height:40,data:Buffer.alloc(40*40*4,128)};
+check(()=>assert.deepEqual(comparePair(original,candidate,image,image),
+  {name:'ct-walk-first',draw_calls_saved:6,primitives:1234,changed_pixels:0,maximum_channel_difference:0}));
+const reject=(change,pattern)=>check(()=>{const value=structuredClone(candidate);change(value);assert.throws(()=>comparePair(original,value,image,image),pattern);});
+reject(value=>value.skin.palette_valid=false,/false/);
+reject(value=>value.skin.palette[0]=[0,0,0],/same palette/);
+reject(value=>value.skin.poses[0]=[0,0,0],/same poses/);
+reject(value=>value.skin.bindings=18,/18/);
+reject(value=>value.skin.bones=54,/54/);
+reject(value=>value.skin.model_transform=[0,0,0],/same model_transform/);
+reject(value=>value.render.primitives--,/same primitives/);
+reject(value=>value.render.draw_calls=100,/draw calls decrease/);
+reject(value=>value.render.scale_3d=0.75,/same scale_3d/);
+reject(value=>value.weapon_clear=false,/same weapon_clear/);
+reject(value=>value.actor_position[0]=1,/same actor_position/);
+const altered={...image,data:Buffer.from(image.data)};
+altered.data[0]++;
+check(()=>assert.equal(comparePair(original,candidate,image,altered).changed_pixels,1));
+altered.data[0]++;
+check(()=>assert.throws(()=>comparePair(original,candidate,image,altered),/maximum pixel difference/));
+altered.data[0]--;
+altered.data[4]++;
+altered.data[8]++;
+check(()=>assert.throws(()=>comparePair(original,candidate,image,altered),/changed pixels/));
+const stages=NAMES.map((name,index)=>{
+  const capture=structuredClone(original);
+  capture.name=name;
+  capture.skin.poses[0]=[index];
+  capture.skin.palette[0]=[index];
+  capture.skin.palette_rid='primary';
+  if (name.includes('squad')) capture.companions=[1,2].map(id=>({position:[id,0,0],yaw:0,
+    skin:{...structuredClone(capture.skin),palette_rid:String(id),palette:Array(18).fill([id+20])}}));
+  return capture;
+});
+check(()=>validateStages(stages));
+check(()=>assert.throws(()=>validateStages(stages.slice(0,-1)),/stages captured/));
+const frozen=structuredClone(stages);
+frozen[1].skin.palette=frozen[0].skin.palette;
+check(()=>assert.throws(()=>validateStages(frozen),/distinct palette/));
+const shared=structuredClone(stages);
+shared[12].companions[0].skin.palette_rid=shared[12].skin.palette_rid;
+check(()=>assert.throws(()=>validateStages(shared),/Separate renderer palettes/));
+const squadA=structuredClone(stages[12]),squadB=structuredClone(squadA);
+squadB.render.draw_calls=82;
+for (const skin of [squadB.skin,...squadB.companions.map(other=>other.skin)]) skin.bindings=54;
+check(()=>assert.equal(comparePair(squadA,squadB,image,image).draw_calls_saved,18));
+squadB.companions[1].skin.poses[0]=[99];
+check(()=>assert.throws(()=>comparePair(squadA,squadB,image,image),/companion 1: same poses/));
+console.log(`OPERATOR_REVIEW_COMPARISON: ${checks}/${checks} passed`);

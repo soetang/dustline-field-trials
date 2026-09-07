@@ -18,6 +18,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const engineLifecycle = process.argv.includes('--engine-lifecycle');
   const expectCachedBackbuffer = process.argv.includes('--expect-cached-backbuffer');
   const wallReview = process.argv.includes('--wall-review');
+  const operatorMotion = process.argv.includes('--operator-motion');
+  assert.ok(!operatorMotion || wallReview,'Operator motion uses the isolated wall-review fixture');
   const hudReview = process.argv.includes('--hud-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
@@ -192,6 +194,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     wasm_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.wasm'))).digest('hex'),
     js_sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'index.js'))).digest('hex')};
   const args = ['--','--test'];
+  if (operatorMotion) args.push('--operator-motion');
   if (process.argv.includes('--diagnostic-no-shadows')) args.push('--diagnostic-no-shadows');
   if (process.argv.includes('--capture')) args.push('--capture');
   if (process.argv.includes('--compare')) args.push('--compare');
@@ -234,6 +237,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+    if (operatorMotion) {
+      const partial=new Map();
+      await page.exposeFunction('saveMotionCapture',capture=>{
+        assert.match(capture.name,/^[a-z0-9-]+$/);
+        fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+        const {png,...data}=capture;
+        partial.set(capture.name,data);
+        fs.writeFileSync(path.join(artifacts,'motion-review.json'),JSON.stringify([...partial.values()],null,2)+'\n');
+      });
+    }
     if (ssaoUnroll) {
       const source=fs.readFileSync(path.join(project,'engine/experiments/ssao-unroll.js'),'utf8');
       await page.addInitScript({content:source+
@@ -246,7 +259,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
-    if (windowsRenderOnly || hudReview) {
+    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -303,6 +316,15 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
     const captures = await page.evaluate(() => window.mapReviewCaptures);
+    if (operatorMotion) {
+      // Preserve screenshots/palette evidence even if a later guard rejects a
+      // shader, skin registration or pose, so failures remain inspectable.
+      for (const capture of captures) {
+        assert.match(capture.name,/^[a-z0-9-]+$/);
+        fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+      }
+      fs.writeFileSync(path.join(artifacts,'motion-review.json'),JSON.stringify(captures.map(({png,...data})=>data),null,2)+'\n');
+    }
     const flatSurfaceState=flatSurface ? await page.evaluate(() => window.flatSurfaceResult) : null;
     if (flatSurface) {
       assert.equal(flatSurfaceState.error,'');
@@ -316,8 +338,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const poses = ['spawn','a-site','long-doors'];
     const modes=process.argv.includes('--compare-ssao') ? ['ao-before','no-ao-before','no-ao-after','ao-after'] : ['high-before','balanced-before','balanced-after','high-after'];
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
-    const expectedWalls=['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
-      'door-near','door-far','player-reported'];
+    const expectedWalls=operatorMotion ? [...['ct','t'].flatMap(team=>['walk-first','walk-next','aim-high','reload','falling','fallen'].map(pose=>`${team}-${pose}`)),
+      'ct-squad','ct-squad-edge','ct-squad-distance']
+      : ['ct-clear',...['ct','t'].flatMap(team=>['zero','thirty','sixty','ninety'].map(angle=>`${team}-angle-${angle}`)),
+        'door-near','door-far','player-reported'];
     const expectedGameplay = gpuTiming ? ['timer-off-before','timer-on-before','timer-on-after','timer-off-after']
       : presentationAbba ? ['native-before','cache-before','cache-after','native-after']
       : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
@@ -404,7 +428,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
       if (wallReview) {
         assert.equal(capture.weapon_clear,true,`${capture.name}: whole weapon clears static geometry`);
         assert.ok(Number.isFinite(capture.weapon_withdrawal));
-        if (capture.name === 'ct-clear' || capture.name.endsWith('-ninety'))
+        if (operatorMotion) {
+          const skins=[capture.skin,...capture.companions.map(other=>other.skin)];
+          for (const skin of skins) {
+            assert.equal(skin.palette_valid,true,'Real renderer palette agrees with the animated skeleton/bind poses');
+            assert.equal(skin.bones,18,'No extra animated skeleton bones');
+            assert.equal(skin.bindings,operatorSurface ? 54 : 18,'Expected original/aliased Skin is registered');
+            assert.equal(skin.palette.length,18);
+            assert.equal(skin.poses.length,18);
+          }
+          const count=capture.name.startsWith('ct-squad') ? 3 : 1;
+          assert.equal(skins.length,count);
+          assert.equal(new Set(skins.map(skin=>skin.palette_rid)).size,count,'Simultaneous rigs own distinct renderer palettes');
+          assert.equal(new Set(skins.map(skin=>JSON.stringify(skin.palette))).size,count,'Squad rigs have genuinely distinct animated palettes');
+          assert.equal(capture.render.quality,'High');
+          assert.equal(capture.render.scale_3d,1);
+          assert.equal(capture.render.ssao,true);
+        } else if (capture.name === 'ct-clear' || capture.name.endsWith('-ninety'))
           assert.equal(capture.weapon_withdrawal,0,`${capture.name}: unrestricted pose is preserved`);
         else assert.ok(capture.weapon_withdrawal > 0,`${capture.name}: wall-aware withdrawal is exercised`);
       }
@@ -484,11 +524,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
     }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
-      operator_surface:operatorSurface,flat_surface:flatSurfaceState,
+      operator_surface:operatorSurface,operator_motion:operatorMotion,flat_surface:flatSurfaceState,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : operatorMotion ? 'fifteen staged animated/squad views with real skin palettes (not gameplay/FPS).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');
