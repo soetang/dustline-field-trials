@@ -24,6 +24,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const presentationCache = process.argv.includes('--presentation-cache');
   const gpuTiming = process.argv.includes('--gpu-timing');
   const ssaoUnroll = process.argv.includes('--ssao-unroll');
+  const operatorSurface = process.argv.includes('--operator-surface');
+  assert.ok(!operatorSurface || ((benchmark || wallReview) && !presentationCache && !gpuTiming && !ssaoUnroll &&
+    !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
+    'Operator surface merge requires an isolated official-engine High render or wall fixture');
   assert.ok(!ssaoUnroll || (benchmark && !presentationCache && !gpuTiming &&
     !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
     'SSAO unroll requires the isolated official-engine render benchmark with unchanged High settings');
@@ -58,6 +62,20 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.mkdirSync(reviewProject);
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
+  if (operatorSurface) {
+    fs.copyFileSync(path.join(project,'engine/experiments/operator_surface.gdshader'),path.join(reviewProject,'_operator_surface.gdshader'));
+    const source=fs.readFileSync(path.join(project,'engine/experiments/operator_surface.gd'),'utf8');
+    const shaderPath='res://engine/experiments/operator_surface.gdshader';
+    assert.equal(source.split(shaderPath).length,2);
+    fs.writeFileSync(path.join(reviewProject,'_operator_surface.gd'),source.replace(shaderPath,'res://_operator_surface.gdshader'));
+    const file=path.join(reviewProject,'scripts/bot.gd');
+    const bot=fs.readFileSync(file,'utf8'),anchor='\tModels.prepare(model)\n';
+    assert.equal(bot.split(anchor).length,2,'One original operator preparation point');
+    fs.writeFileSync(file,bot.replace(anchor,anchor+
+      '\tif not preload("res://_operator_surface.gd").apply(model):\n'+
+      '\t\tpush_error("OPERATOR_SURFACE_REJECTED " + preload("res://_operator_surface.gd").last_error)\n'+
+      '\telse: print("OPERATOR_SURFACE_READY ", index)\n'));
+  }
   let instrumentation;
   if (gameplayProfile) {
     fs.copyFileSync(path.join(__dirname,'cpu_profile.gd'),path.join(reviewProject,'_cpu_profile.gd'));
@@ -258,6 +276,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
     const captures = await page.evaluate(() => window.mapReviewCaptures);
+    if (operatorSurface) assert.equal(logs.filter(line=>line.includes('OPERATOR_SURFACE_READY ')).length,9,
+      'All nine real operator models use the merged fixture, without silent fallback');
     const poses = ['spawn','a-site','long-doors'];
     const modes=process.argv.includes('--compare-ssao') ? ['ao-before','no-ao-before','no-ao-after','ao-after'] : ['high-before','balanced-before','balanced-after','high-after'];
     const expected = process.argv.includes('--compare') || process.argv.includes('--compare-ssao') ? poses.flatMap(name=>modes.map(mode=>`${name}-${mode}`)) : poses;
@@ -379,6 +399,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
     }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
+      operator_surface:operatorSurface,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
