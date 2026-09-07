@@ -1,15 +1,18 @@
+/bevy/target/
+# Legacy cache may be restored by CI or an already-running local process.
 /target/
+/bevy/web/
+/bevy/artifacts/
 /node_modules/
 /.tools/
 *.log
 /artifacts/
-/web/
 /_site/
-/native-godot/.godot/
-/native-godot/builds/
+/courtyard/.godot/
+/courtyard/builds/
 __pycache__/
 *.pyc
 .env
 .env.*
 # Unused legacy experiment: provenance not documented; never redistribute.
-/assets/textures/sandstone-plaster.png
+/bevy/assets/textures/sandstone-plaster.png

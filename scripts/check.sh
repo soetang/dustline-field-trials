@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
-check_dir="$(mktemp -d /tmp/desert-strike-check.XXXXXX)"
-rustc --edition=2024 --test src/rules.rs -o "$check_dir/rules-tests"
-"$check_dir/rules-tests"
-node --check client.js
-node --check touch-controls.js
-node --input-type=module --check < boot.js
-node tests/boot-streaming.js
-if [[ "${1:-}" != "--source-only" ]]; then node tests/client-check.js; fi
-node tests/client-input.js
-node tests/touch-input.js
-node tests/models-check.js
-node tests/capture-tools.js
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+node tests/workspace-check.js
+node tests/serve-check.js
+node tests/check-runner.js
 node tests/browser-options.js
-node tests/smoke.js
-echo "Fast checks passed. Browser integration: npm run test:browser"
+node classic/tests/smoke.js
+bash bevy/scripts/check.sh --js-only
+if (($# == 0)); then set -- --fast; fi
+bash courtyard/tools/check.sh "$@"

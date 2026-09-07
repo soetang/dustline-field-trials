@@ -3,11 +3,21 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "test": "bash scripts/check.sh",
-    "test:browser": "node tests/bevy-browser.js",
-    "test:classic": "node tests/classic-browser.js",
-    "serve": "python3 -m http.server 8765",
-    "build": "bash scripts/build-wasm.sh"
+    "test": "npm run test:courtyard",
+    "test:fast": "bash scripts/check.sh --fast",
+    "test:courtyard": "bash courtyard/tools/check.sh",
+    "test:bevy": "bash bevy/scripts/check.sh",
+    "test:classic": "node classic/tests/smoke.js",
+    "test:browser": "node courtyard/tests/browser.js",
+    "test:browser:bevy": "node bevy/tests/bevy-browser.js",
+    "test:browser:classic": "node classic/tests/classic-browser.js",
+    "setup:courtyard": "bash courtyard/tools/setup.sh",
+    "play:courtyard": "bash 'courtyard/Play Linux.sh'",
+    "serve": "node scripts/serve.js",
+    "build": "npm run build:courtyard",
+    "build:courtyard": "bash courtyard/tools/build-web.sh",
+    "build:bevy": "bash bevy/scripts/build-wasm.sh",
+    "export:site": "node scripts/export-site.js"
   },
   "devDependencies": { "playwright": "1.58.2" }
 }

@@ -1,3 +1,4 @@
-licenses/** linguist-vendored -whitespace
-assets/models/*.glb binary
-assets/textures/*.jpg binary
+bevy/licenses/** linguist-vendored -whitespace
+courtyard/licenses/** linguist-vendored -whitespace
+**/assets/models/*.glb binary
+**/assets/textures/*.jpg binary

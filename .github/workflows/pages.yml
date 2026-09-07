@@ -23,34 +23,45 @@ jobs:
           path: .tools/godot/4.7.2
           key: godot-web-4.7.2-sha512
       - name: Install verified open-source Godot and single-thread web template
-        run: bash native-godot/tools/setup.sh --web
+        run: bash courtyard/tools/setup.sh --web
       - name: Verify and build the separate Courtyard browser preview
         run: |
-          bash native-godot/tools/check.sh
-          bash native-godot/tools/build-web.sh
+          bash courtyard/tools/check.sh
+          bash courtyard/tools/build-web.sh
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/bin/wasm-bindgen*
-            target
-          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+            bevy/target
+          key: wasm-apps-${{ runner.os }}-${{ hashFiles('bevy/Cargo.lock', 'bevy/rust-toolchain.toml') }}
           restore-keys: |
+            wasm-apps-${{ runner.os }}-
             wasm-${{ runner.os }}-
+      - name: Migrate an older cached compiler directory
+        run: |
+          if [[ -d target && ! -e bevy/target ]]; then mv -- target bevy/target; fi
       - name: Install pinned Rust and WebAssembly target
+        working-directory: bevy
         run: rustup show
       - name: Install matching binding generator
+        working-directory: bevy
         run: |
           if ! wasm-bindgen --version 2>/dev/null | grep -q '0.2.127'; then
             cargo install wasm-bindgen-cli --version 0.2.127 --locked
           fi
       - name: Build and verify source and release
-        run: npm run build
+        run: npm run build:bevy
       - name: Full seeded AI simulation playtest
-        run: bash scripts/playtest-ai.sh
+        run: bash bevy/scripts/playtest-ai.sh
       - name: Export only the current release and licensed assets
         run: |
+          node tests/workspace-check.js
+          node tests/serve-check.js
+          node tests/check-runner.js
+          node tests/browser-options.js
+          node classic/tests/smoke.js
           node scripts/export-site.js
           node tests/site-check.js
       - name: Playtest the exported Courtyard page before deployment
@@ -58,7 +69,7 @@ jobs:
           TEST_DPR: '0.4'
         run: |
           npx playwright install --with-deps chromium
-          node native-godot/tests/browser.js --exported
+          node courtyard/tests/browser.js --exported
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

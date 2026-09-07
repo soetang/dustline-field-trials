@@ -2,9 +2,9 @@ name: Native Godot checks
 on:
   push:
     branches: [main]
-    paths: ['native-godot/**', '.github/workflows/native.yml']
+    paths: ['courtyard/**', 'scripts/**', 'tests/**', 'package*.json', '.github/workflows/native.yml']
   pull_request:
-    paths: ['native-godot/**', '.github/workflows/native.yml']
+    paths: ['courtyard/**', 'scripts/**', 'tests/**', 'package*.json', '.github/workflows/native.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,9 +19,9 @@ jobs:
           path: .tools/godot/4.7.2
           key: godot-linux-4.7.2-sha512
       - name: Install checksum-pinned open-source Godot
-        run: bash native-godot/tools/setup.sh
+        run: bash courtyard/tools/setup.sh
       - name: Import and run actual-physics regression checks
-        run: bash native-godot/tools/check.sh
+        run: bash courtyard/tools/check.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

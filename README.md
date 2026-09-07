@@ -1,214 +1,68 @@
-# Dustline: Field Trials
+# Dustline: Courtyard
 
-An experimental **Sol + Astra run**: a browser tactical FPS inspired by
-**Counter-Strike**, built with Rust, WebAssembly, Bevy and Blender.
-An independent AI-assisted development experiment—not affiliated with Valve.
+**[Play the newest version — Courtyard](https://soetang.github.io/dustline-field-trials/courtyard/)**
 
-A separate **open-source Godot edition**, with one original Dust2-inspired map,
-has both a [native desktop version](native-godot/README.md) and a new
-**[Courtyard browser preview](https://soetang.github.io/dustline-field-trials/courtyard/)**.
-The Courtyard preview currently needs a keyboard and mouse. It does not replace
-the original desktop/mobile browser game described below.
+An experimental **Sol + Astra run**: an open-source tactical FPS inspired by
+Counter-Strike. Courtyard is the actively developed Godot edition: one original
+Dust2-inspired desert map, 5v5 bot matches, animated operators, four weapons,
+economy and bomb defusal. Browser and native desktop builds share the game.
+Independent of Valve; not an exact map reproduction or finished competitive game.
 
-**[Play in your browser](https://soetang.github.io/dustline-field-trials/)** ·
-[Watch gameplay](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905) ·
-[Download the clip](docs/media/gameplay.webm)
+![Courtyard running in the browser](courtyard/docs/browser-preview.png)
 
-![Dustline arena and original operator models, captured in the actual game](docs/media/dustline-spawn.png)
+Actual browser capture, not concept art. Courtyard currently needs a keyboard
+and mouse; graphics, AI and browser performance are still experimental.
+[Native play and controls](courtyard/README.md) ·
+[Operator animation study](courtyard/docs/grounded-motion.webm) (offline render, not gameplay FPS).
 
-[![A second view from the playable arena; click to watch gameplay](docs/media/dustline-lane.png)](https://soetang.github.io/dustline-field-trials/watch.html?v=smooth-20260905)
+## Three separate apps
 
-Actual browser captures, not concept art. The new 30-second, silent recording
-uses Performance mode with hardware-accelerated Windows Chrome and smooth
-automated mouse/keyboard input. The saved video is 25 FPS, about 3.5 MiB, and
-includes movement, firing and the detailed weapon models. It is not a performance
-guarantee for other devices. The earlier choppy software-rendered clip is replaced.
+| Folder | Status | Play |
+| --- | --- | --- |
+| [courtyard/](courtyard/) | Newest; Godot, desktop/browser | [Courtyard](https://soetang.github.io/dustline-field-trials/courtyard/) |
+| [bevy/](bevy/README.md) | Earlier Rust/WebAssembly edition; desktop/mobile | [Earlier edition](https://soetang.github.io/dustline-field-trials/) |
+| [classic/](classic/) | Original JavaScript prototype | [Classic](https://soetang.github.io/dustline-field-trials/classic.html) |
 
-## What is playable?
+Source folders are separate from public URLs. Existing bookmarks still work.
+Shared browser helpers and site export live in `scripts/`; app code, assets,
+tests and build tools stay with their app. Generated builds/caches are ignored.
 
-Five-versus-five bomb defusal against bots, first to five rounds. Four weapons,
-weapon-specific spread and recoil, economy, reloading, aiming/scope, walking,
-crouching, spectating, radar and squad status. The 64 × 48 m desert arena has
-three lanes, cover, gentle hills, original operator models and sandstone ridges.
+## Work locally
 
-Bots use sight, short-lived contacts, nearby callouts, bursts, cover-aware
-repositioning and separate bomb/cover roles. Wounded bots briefly hold their
-retreat; teammates no longer steal an active defuse. They scan while advancing,
-recenter before tight corners, and detect wall-sliding without route progress.
-Travel speed is 3.25 m/s versus the player's 3.65 m/s, with slower combat movement.
-They still need tuning.
-
-Use a browser with WebGL2 and hardware acceleration. **Desktop mouse/keyboard
-and mobile touch controls are both supported on the same site.** Mobile defaults
-to landscape: Deploy requests fullscreen and orientation locking when supported;
-otherwise rotate the phone sideways. A rotate-phone prompt holds the round in
-portrait, with an explicit portrait fallback. Browser/OS rotation locks cannot
-always be overridden ([browser API limitations](https://developer.mozilla.org/en-US/docs/Web/API/ScreenOrientation/lock)).
-Use the left stick to move, swipe the view to look, tap the view to fire, or hold
-FIRE and drag it to aim while shooting. Another finger can tap to fire while the
-first keeps aiming. Tap AIM/CROUCH to toggle. BUY, RELOAD, DEFUSE and PAUSE have
-dedicated buttons. Touch play does not require pointer lock. Phones default to
-Performance mode with capped render density; real-device performance varies.
-No account or installation is needed. This is single-player with bots, not online
-multiplayer. The engine file is roughly 29 MB (27.6 MiB) before HTTP compression,
-36% smaller than the previous release. The browser build omits unused Bevy
-2D/UI/audio/picking systems and debug function names; the native text HUD remains
-enabled separately. Startup streams compilation without keeping two complete
-download buffers in JavaScript. Arena/operator art
-adds about 3.6 MiB; each equipped first-person weapon loads another 0.4–0.8 MiB
-on demand. Actual transfer size depends on the server's compression.
-Static map metadata is sent to the HUD once per round, not twenty times per
-second; older cached browser UIs automatically keep receiving complete packets.
-If needed, choose **Escape → Graphics → Performance**, or try the
-[classic prototype](https://soetang.github.io/dustline-field-trials/classic.html).
-
-## Open source and open graphics
-
-Original code, procedural models, scenery and interface art are **MIT licensed**.
-The editable Blender generators are included. The six external concrete textures
-are **CC0 from Poly Haven**; no Counter-Strike/Valve artwork or commercial sound
-samples are included. Sounds are synthesized in code.
-
-If mobile sound is silent, open PAUSE → TEST SOUND / ENABLE AUDIO. This retries
-the browser audio context and plays two generated tones. Check game/media volume,
-silent mode and Bluetooth output if the test remains silent. COPY TEST DETAILS
-includes audio state and volume. Where supported, explicit playback uses the
-browser's media audio session; no sound files or microphone access are needed.
-
-See [THIRD_PARTY.md](THIRD_PARTY.md), the [asset manifest](assets/manifest.json),
-[texture source URLs/checksums](assets/textures/sources.json) and [license notices](licenses).
-An unused local texture without documented provenance is excluded from Git and
-the published site. Original first-person weapon GLBs include gloved hands,
-distinct silhouettes and animated magazines/bolts. Models load when equipped
-(about 0.4–0.8 MiB each), use vertex colours without extra texture downloads,
-and retain a primitive visual fallback while loading. Blender sources are included.
-
-## Build and run locally
-
-Install Rust through rustup, Node.js (22 recommended) and a Python 3 static server.
-The repository pins Rust 1.95 and its WebAssembly target.
-
-```sh
-cargo install wasm-bindgen-cli --version 0.2.127 --locked
-npm run build
-npm run serve
-```
-
-Open **http://localhost:8765/bevy.html**. The local root `/` is the classic
-prototype. Do not open the HTML as a `file://` URL.
-
-Builds publish a complete immutable JS/Wasm pair to `web/builds/release-*`.
-The loader manifest changes only after verification, so refreshing mid-build
-cannot mix incompatible releases. Generated releases and tools are not in Git.
-
-## Test and send feedback
-
-```sh
-bash scripts/check.sh --source-only       # fast rules, input and model checks
-bash scripts/playtest-ai.sh               # 24 complete seeded simulation matches
-npm test                                 # after building: also check release/assets
-cargo check --target wasm32-unknown-unknown --offline
-```
-
-For real browser checks:
+From the repository root, with Node.js and Bash installed:
 
 ```sh
 npm ci
-npx playwright install chromium
-npm run test:browser -- --performance --playtest
-npm run test:browser -- --mobile-ui       # fast real-browser touch/layout check
-npm run test:browser -- --mobile          # actual Wasm touch gameplay
+npm run setup:courtyard
+npm run test:fast                         # no browser, GPU or Rust compilation
+npm run play:courtyard                    # native game
 ```
 
-The browser suite exercises actual Wasm gameplay: deployment, mouse capture,
-purchases, movement, firing, reloads, aiming, pause/resume and live bot combat.
-Simulation tests are not human difficulty ratings, and software rendering is
-not representative GPU performance. `--startup-only` checks only startup;
-`--ui-only` checks interface behaviour without the game renderer.
-Mobile checks use emulation, not a physical phone. Please report your phone model
-and browser along with any touch-control or performance problems.
+For the browser, run `npm run setup:courtyard -- --web` once, then
+`npm run build` and `npm run serve`. Open **http://localhost:8765/**.
+The first web setup downloads Godot's large export-template archive; it is not
+shipped to players. See [Bevy instructions](bevy/README.md) for the older app.
 
-While playing, press **Escape → Copy test details**. Paste that report with what
-you tried, what you expected and what happened. It includes the build, match seed,
-position, view angles and performance. Nothing is uploaded automatically.
+```sh
+npm test                                  # full Courtyard headless suite
+npm run test:courtyard -- pose_reset       # one relevant suite
+npm run test:courtyard -- --list            # discover suites without running them
+npm run test:classic                       # fast JavaScript prototype checks
+```
 
-**F8** pauses and hides the HUD for screenshots, including across focus loss.
-Escape/F8 returns to the pause menu; choose Return to action to resume.
-If image paste is unavailable, save the image and share its local file path.
+Pushes to `main` build and test the published site in GitHub Actions. Browser
+playtests run there before deployment; failed checks leave the previous site live.
+This folder reorganization does not reduce graphics or claim higher gameplay FPS.
 
-## Controls
+## Feedback and licensing
 
-WASD move · mouse aim · left click fire · right click aim/scope · R reload
+In Courtyard, **F3** shows performance, **F8** saves a screenshot, and
+**Escape → Copy feedback details** includes build, camera and live frame timings.
+Send that report with what you tried and what looked wrong. Nothing is uploaded
+automatically. Use the same graphics settings/window size for performance comparisons.
 
-Shift walk · Ctrl crouch · E hold to defuse · B armory · 1–4 buy
-
-Tab scoreboard · C spectate next teammate · Escape pause · F8 screenshot view
-
-The first seven seconds are preparation: everyone is held in place while you
-buy and aim, then a ROUND LIVE cue unlocks movement. Buy at spawn during the
-first 20 seconds. Defusing takes five seconds with your
-kit. Friendly fire is off; a planted bomb must still be defused after the last
-attacker is eliminated. Short bursts and stationary aiming improve accuracy.
-
-## Publish and capture
-
-Push to `main` to build and publish through [GitHub Actions](.github/workflows/pages.yml).
-For a fork, enable **Settings → Pages → Source: GitHub Actions** first and update
-the public links. The first build compiles Bevy; subsequent builds use a cache.
-Release builds omit Wasm debug names; use `KEEP_WASM_NAMES=1 npm run build` when
-readable engine stack traces are needed locally.
-
-Before exporting locally, build Courtyard too: run
-`bash native-godot/tools/setup.sh --web`, then
-`bash native-godot/tools/build-web.sh` (see its README for verification).
-`node scripts/export-site.js` creates `_site` containing one verified Rust release,
-one separately versioned Godot release, allowlisted assets, media and license
-notices. If `_site` exists, move it aside before exporting again. The website root
-opens the existing desktop/mobile 3D client, `courtyard/` opens the keyboard/mouse
-Godot preview, and `classic.html` opens the earlier prototype. No backend is
-required. CI builds both games and runs the exported Courtyard browser playtest
-before deploying; a failing build leaves the previous site live.
-
-After installing Playwright and exporting the site, `node scripts/capture-gameplay.js`
-captures actual browser screenshots and a raw silent recording, testing assets
-under a repository URL prefix. A smooth, speed-limited mouse driver follows a
-walkable route using normal game input. `node scripts/trim-gameplay.js` saves a
-short clip beside that session. Each attempt gets its own directory in ignored
-`artifacts/video-raw/`, with renderer, frame-timing and movement diagnostics.
-Neither command overwrites public media: review the clip before copying it and
-the screenshots into `docs/media/`.
-`node tests/video-check.js path/to/gameplay.webm` decodes the finished clip and
-checks scene motion, file completeness and size, rather than trusting an FPS
-label. It rejects the old mostly-static recording.
-
-Browser tests and captures use portable SwiftShader by default. To use an
-available hardware OpenGL driver, set `DUSTLINE_GPU=1`. On this WSL machine,
-the Mesa/D3D12 driver still stalls during gameplay even when its NVIDIA adapter
-starts successfully. These are local test settings, not flags required by
-players. Captures use native pixel density;
-`TEST_DPR=0.65` lowers capture resolution on slower hosts. Recorded frame timing
-is diagnostic, not a performance guarantee for other devices.
-
-On WSL with Windows Chrome installed in its standard location,
-`DUSTLINE_WINDOWS_BROWSER=1 npm run test:browser -- --performance --playtest`
-runs the same tests through native Windows graphics. The same environment flag
-works with the capture script. The runner creates a fresh temporary profile,
-uses a loopback-only debugging bridge, and closes only its own browser. It
-does not change your normal browser profile or the deployed game.
-Add `--exported` after the test command's `--` to test the already-exported
-`_site` build under `/dustline-field-trials/`, including versioned browser scripts
-and model/texture loading. This checks the GitHub Pages layout rather than only
-the development server's root URL.
-Add `--record` to that full playtest to capture a fresh round after the engine is
-already warmed up. This is the verified recording path on this machine.
-`--compact-hud` additionally checks metadata refresh and fallback compatibility
-against an engine built from the current sources.
-
-`bash scripts/build-capture.sh` builds a separate, development-only engine with
-explicit time steps for offline recording experiments. It does not change the
-playable release manifest; site checks reject capture-only engines. Smooth
-recording is still being developed and is not a real-time performance test.
-
-The native entry point exists (`cargo run --release`), but the browser is the
-primary tested client. Native Linux needs windowing development libraries such
-as Wayland and xkbcommon, and has not been verified in this workspace.
+Original code, models, map geometry and generated audio are **MIT licensed**.
+External textures are **Poly Haven CC0**; engine/dependency notices retain their
+own licenses. No Valve assets, proprietary engine, sampled weapon sounds or
+recorded soundtrack are included. See [LICENSE](LICENSE),
+[provenance](THIRD_PARTY.md) and [Courtyard asset notices](courtyard/licenses/ASSET-SOURCES.txt).

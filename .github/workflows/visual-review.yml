@@ -22,43 +22,43 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: node native-godot/tests/hud-buffer-probe-check.js --with-png
+      - run: node courtyard/tests/hud-buffer-probe-check.js --with-png
       - uses: actions/cache@v4
         with:
           path: .tools/godot/4.7.2
           key: godot-web-4.7.2-sha512
       - name: Prepare the verified official engine and isolated release
         run: |
-          bash native-godot/tools/setup.sh --web
-          bash native-godot/tools/build-web.sh
+          bash courtyard/tools/setup.sh --web
+          bash courtyard/tools/build-web.sh
           npx playwright install --with-deps chromium
       - name: Capture staged High-quality WebGL views on the runner
         env:
           REVIEW_SCENE: ${{ inputs.scene }}
         run: |
           case "$REVIEW_SCENE" in
-            map) node native-godot/tests/map-review-browser.js ;;
-            walls) node native-godot/tests/map-review-browser.js --wall-review ;;
-            crates) node native-godot/tests/map-review-browser.js --crate-detail ;;
-            hud) node native-godot/tests/map-review-browser.js --hud-review ;;
+            map) node courtyard/tests/map-review-browser.js ;;
+            walls) node courtyard/tests/map-review-browser.js --wall-review ;;
+            crates) node courtyard/tests/map-review-browser.js --crate-detail ;;
+            hud) node courtyard/tests/map-review-browser.js --hud-review ;;
             surfaces)
-              node native-godot/tests/map-review-browser.js
-              node native-godot/tests/map-review-browser.js --flat-surface
+              node courtyard/tests/map-review-browser.js
+              node courtyard/tests/map-review-browser.js --flat-surface
               ;;
             operators)
-              node native-godot/tests/map-review-browser.js --wall-review
-              node native-godot/tests/map-review-browser.js --wall-review --operator-surface
+              node courtyard/tests/map-review-browser.js --wall-review
+              node courtyard/tests/map-review-browser.js --wall-review --operator-surface
               ;;
             operator-motion)
-              node native-godot/tests/map-review-browser.js --wall-review --operator-motion
-              node native-godot/tests/map-review-browser.js --wall-review --operator-motion --operator-surface
-              node native-godot/tests/compare-operator-reviews.js
+              node courtyard/tests/map-review-browser.js --wall-review --operator-motion
+              node courtyard/tests/map-review-browser.js --wall-review --operator-motion --operator-surface
+              node courtyard/tests/compare-operator-reviews.js
               ;;
-            engine) node native-godot/tests/map-review-browser.js --engine-lifecycle --capture ;;
-            cpu) node native-godot/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
+            engine) node courtyard/tests/map-review-browser.js --engine-lifecycle --capture ;;
+            cpu) node courtyard/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
             gpu)
-              node native-godot/tests/map-review-browser.js --gameplay-profile --gpu-timing --duration=3 --warmup=3 --width=640 --height=360
-              node native-godot/tests/map-review-browser.js --benchmark --gpu-timing --samples=12 --warmup=3 --width=640 --height=360
+              node courtyard/tests/map-review-browser.js --gameplay-profile --gpu-timing --duration=3 --warmup=3 --width=640 --height=360
+              node courtyard/tests/map-review-browser.js --benchmark --gpu-timing --samples=12 --warmup=3 --width=640 --height=360
               ;;
             *) exit 1 ;;
           esac
