@@ -8,9 +8,9 @@ Dust2-inspired desert map, 5v5 bot matches, animated operators, four weapons,
 economy and bomb defusal. Browser and native desktop builds share the game.
 Independent of Valve; not an exact map reproduction or finished competitive game.
 
-![Courtyard running in the browser](courtyard/docs/browser-preview.png)
+![Courtyard 0.4.16 — staged browser view of the CT undercroft](courtyard/docs/ct-undercroft.png)
 
-Actual browser capture, not concept art. Courtyard currently needs a keyboard
+Actual staged browser capture, not concept art. Courtyard currently needs a keyboard
 and mouse; graphics, AI and browser performance are still experimental.
 [Native play and controls](courtyard/README.md) ·
 [Operator animation study](courtyard/docs/grounded-motion.webm) (offline render, not gameplay FPS).
@@ -47,6 +47,7 @@ shipped to players. See [Bevy instructions](bevy/README.md) for the older app.
 npm test                                  # full Courtyard headless suite
 npm run test:workspace                     # no engine installation needed
 npm run test:courtyard -- pose_reset       # one relevant suite
+npm run test:courtyard -- function_benchmark # small CPU benchmark; no rendering
 npm run test:courtyard -- --list            # discover suites without running them
 npm run test:classic                       # fast JavaScript prototype checks
 ```
