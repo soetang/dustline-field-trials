@@ -1,0 +1,45 @@
+name: Courtyard matched engine templates (no deployment)
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: 'Identical baseline/candidate compiler parallelism; 2 limits peak memory'
+        type: choice
+        default: '2'
+        options: ['2', '4']
+permissions:
+  contents: read
+concurrency:
+  group: courtyard-engine-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      ENGINE_REVIEW_JOBS: ${{ inputs.jobs }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate the pinned build plan without compiling
+        run: bash courtyard/tools/build-engine-review.sh --check-only
+      # Cache only the hash-verified source archive, never mutable/previously
+      # patched trees, object files, installed templates or public releases.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/engine-review-downloads
+          key: engine-review-source-4.7.2-e954996374cbd1cb5d72e0e3781cc537408e6ce73b010b12c6c2f308a820690a
+      - name: Build original then isolated SSAO-depth-copy candidate
+        run: bash courtyard/tools/build-engine-review.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: courtyard-engine-review-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/engine-review-artifacts/

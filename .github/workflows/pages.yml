@@ -8,7 +8,13 @@ on:
       - 'bevy/README.md'
       - 'courtyard/README.md'
       - 'courtyard/docs/**'
-      - 'courtyard/engine/README.md'
+      # These are excluded from the public pack. Native/workspace CI still
+      # checks test-only pushes; do not rebuild all three unchanged games.
+      - 'courtyard/engine/**'
+      - 'courtyard/tests/**'
+      - 'courtyard/tools/build-engine-review.sh'
+      - '.github/workflows/visual-review.yml'
+      - '.github/workflows/engine-review.yml'
       - 'scripts/serve.js'
       - 'tests/serve-check.js'
       - 'tests/check-runner.js'

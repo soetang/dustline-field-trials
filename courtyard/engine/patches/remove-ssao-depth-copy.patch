@@ -1,0 +1,20 @@
+--- a/drivers/gles3/rasterizer_scene_gles3.cpp
++++ b/drivers/gles3/rasterizer_scene_gles3.cpp
+@@ -2701,10 +2701,15 @@
+ 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+ 	glViewport(0, 0, rb->internal_size.x, rb->internal_size.y);
+ 
+-	// If SSAO is enabled, we definitely need the depth buffer.
+-	if (ssao_enabled) {
++	// SSAO reads internal depth in post processing. Preserve the separate
++	// backbuffer copy only for material readers on non-reflection single-view Web.
++	bool ssao_needs_backbuffer = ssao_enabled;
++#ifdef WEB_ENABLED
++	ssao_needs_backbuffer = ssao_needs_backbuffer && (is_reflection_probe || render_data.view_count != 1);
++#endif
++	if (ssao_needs_backbuffer) {
+ 		scene_state.used_depth_texture = true;
+ 	}
+ 
+ 	// Do depth prepass if it's explicitly enabled
+ 	bool use_depth_prepass = config->use_depth_prepass;
