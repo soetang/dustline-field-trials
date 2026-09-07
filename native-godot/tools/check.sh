@@ -39,6 +39,7 @@ GODOT_BIN="$godot_bin" node "$project_dir/tests/profile-instrumentation-check.js
 node "$project_dir/tests/presentation-state-cache-check.js" 2>&1 | tee "$log_dir/presentation-state-cache.log"
 node "$project_dir/tests/gpu-timer-probe-check.js" 2>&1 | tee "$log_dir/gpu-timer-probe.log"
 node "$project_dir/tests/backbuffer-gl-audit-check.js" 2>&1 | tee "$log_dir/backbuffer-gl-audit.log"
+node "$project_dir/tests/ssao-unroll-check.js" 2>&1 | tee "$log_dir/ssao-unroll.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/wall_collision.gd -- --test 2>&1 | tee "$log_dir/wall-collision.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/wall-collision.log"; then exit 1; fi
 grep -Eq '^WALL_COLLISION: [0-9]+/[0-9]+ passed' "$log_dir/wall-collision.log"

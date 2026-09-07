@@ -23,6 +23,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const presentationAbba = process.argv.includes('--presentation-abba');
   const presentationCache = process.argv.includes('--presentation-cache');
   const gpuTiming = process.argv.includes('--gpu-timing');
+  const ssaoUnroll = process.argv.includes('--ssao-unroll');
+  assert.ok(!ssaoUnroll || (benchmark && !presentationCache && !gpuTiming &&
+    !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
+    'SSAO unroll requires the isolated official-engine render benchmark with unchanged High settings');
   const simpleCrates = process.argv.includes('--simple-crates');
   // --crate-detail remains a harmless alias for the now-standard visuals.
   assert.ok(!simpleCrates || (!wallReview && !gameplayProfile && !engineLifecycle && !process.argv.includes('--crate-detail')),
@@ -186,6 +190,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+    if (ssaoUnroll) {
+      const source=fs.readFileSync(path.join(project,'engine/experiments/ssao-unroll.js'),'utf8');
+      await page.addInitScript({content:source+
+        '\nwindow.ssaoUnroll=window.SsaoUnroll.installCanvasHook(HTMLCanvasElement.prototype,{enabled:true});'});
+    }
     if (presentationAbba || presentationCache) {
       const source=fs.readFileSync(path.join(project,'engine/experiments/presentation-state-cache.js'),'utf8');
       await page.addInitScript({content:source+(presentationCache ? '\nwindow.presentationStateCache.setEnabled(true);' : '')});
@@ -337,6 +346,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
       const png = Buffer.from(capture.png,'base64');
       assert.equal(png.readUInt32BE(0),0x89504e47);
+      if (benchmark) assert.deepEqual([png.readUInt32BE(16),png.readUInt32BE(20)],capture.render.viewport_pixels,
+        'Readback verifies actual viewport pixels, excluding window letterboxing');
       if (engineLifecycle) assert.deepEqual([png.readUInt32BE(16),png.readUInt32BE(20)],capture.resolution,
         'Readback dimensions reflect actual viewport resize');
       fs.writeFileSync(path.join(artifacts,capture.name+'.png'),png);
@@ -350,7 +361,24 @@ const { launchBrowser } = require('../../scripts/browser-options');
       assert.ok(state.hits > 0,'Cached presentation state was used');
       assert.deepEqual(state.validation,{lost:false,scissor:true,draw:true},'Cached state still matches native state');
     }
-    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,
+    // Compilation transforms only; take counters after all timed windows.
+    const ssaoState = ssaoUnroll ? await page.evaluate(() => window.ssaoUnroll.snapshot()) : null;
+    if (ssaoUnroll) {
+      assert.equal(ssaoState.contexts,1);
+      assert.equal(ssaoState.enabled,true);
+      assert.ok(ssaoState.replaced > 0,'Actual engine shader source matched the pinned unroll');
+      assert.equal(ssaoState.rejected,0,'No ambiguous Medium shader candidates');
+      assert.equal(ssaoState.exceptions,0);
+      assert.equal(ssaoState.adds_driver_queries,false);
+      for (const capture of captures) {
+        assert.equal(capture.render.quality,'High');
+        assert.equal(capture.render.ssao,true);
+        assert.equal(capture.render.scale_3d,1);
+        assert.deepEqual(capture.render.viewport,[width,height]);
+        assert.deepEqual(capture.render.render_3d,capture.render.viewport_pixels,'High does not downscale the actual viewport');
+      }
+    }
+    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
