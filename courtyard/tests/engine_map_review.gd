@@ -33,6 +33,11 @@ func check(ok: bool, label: String) -> void:
 		failure_labels.append(label)
 		printerr("ENGINE_MAP_REVIEW_FAIL: ", label)
 
+static func canvas_matches_window(value: Variant, size: Vector2i) -> bool:
+	# JSON numbers are floats; Array equality also compares element types.
+	# Cast expected dimensions only, never truncate a malformed observed value.
+	return value is Array and value == [float(size.x),float(size.y)]
+
 func freeze(node: Node) -> void:
 	node.set_process(false)
 	node.set_physics_process(false)
@@ -224,7 +229,7 @@ func stage(name: String, mutation: Callable) -> void:
 		check(int(steady.totals.texture_allocations) == 0 and int(steady.totals.renderbuffer_allocations) == 0,name+": stable steady storage")
 	for count in setup_draws+steady_draws: check(count > 0,name+": root renders every observed frame")
 	check(root.get_class() == "Window" and not root.disable_3d and not root.use_xr,name+": ordinary single-view root Window")
-	check(canvas_size == [root.size.x,root.size.y],name+": actual canvas matches physical Window")
+	check(canvas_matches_window(canvas_size,root.size),name+": actual canvas matches physical Window")
 	check(render.viewport_pixels == ([1600,900] if root.size == SMALL_SIZE else [2208,1242]),name+": actual drawable excludes pillarboxes")
 	check(state.process_disabled and state.physics_disabled and state.input_disabled,name+": no automatic game callbacks/input")
 	check(state.game_elapsed == 0.0 and state.phase_left == 100.0 and state.phase == "LIVE",name+": unchanged match clock")
