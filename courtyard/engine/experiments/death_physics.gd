@@ -2,11 +2,13 @@ extends RefCounted
 
 # Test-only, lazy handoff from the current animated pose. Callers must stop
 # procedural rig updates until disposal. No production hook or backend switch.
-# Requires Jolt Physics with 5 mm penetration slop set before engine startup.
+# Requires Jolt Physics with 5 mm slop and CCD movement threshold 0.25 at startup.
 # The rifle falls independently; it is not constrained to either hand.
 const BODY_NAMES := ["pelvis", "chest", "head", "upperarm_l", "forearm_l", "upperarm_r", "forearm_r", "thigh_l", "shin_l", "thigh_r", "shin_r", "weapon"]
 const HULL_PAD := 0.012
 const PENETRATION_SLOP := 0.005
+const CCD_MOVEMENT_THRESHOLD := 0.25
+const CCD_SETTING := "physics/jolt_physics_3d/simulation/continuous_cd_movement_threshold"
 
 # Node references do not retain the RefCounted rig that may own this helper.
 var model: Node3D
@@ -36,6 +38,11 @@ func activate(source_rig: RefCounted, velocity := Vector3.ZERO) -> bool:
 		return _reject("Death physics requires Jolt Physics at engine startup")
 	if not ProjectSettings.has_setting("physics/jolt_physics_3d/simulation/penetration_slop") or absf(float(ProjectSettings.get_setting_with_override("physics/jolt_physics_3d/simulation/penetration_slop")) - PENETRATION_SLOP) > 0.0000001:
 		return _reject("Death physics requires 0.005 m Jolt penetration slop at engine startup")
+	# The default 0.75 skips a forearm's ~50 mm impact translation at 60 Hz:
+	# its threshold is ~65 mm, allowing a rotating corner through the floor.
+	# This is an isolated test-project requirement, never a runtime mutation.
+	if ProjectSettings.get_setting_with_override(CCD_SETTING) != CCD_MOVEMENT_THRESHOLD:
+		return _reject("Death physics requires 0.25 Jolt CCD movement threshold at engine startup")
 	if not is_instance_valid(source_rig) or not velocity.is_finite():
 		return _reject("Death physics requires a valid rig and finite velocity")
 	var source_model := source_rig.get("model") as Node3D

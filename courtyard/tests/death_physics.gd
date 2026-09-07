@@ -202,8 +202,9 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 		body_layout_ok = body_layout_ok and body.collision_layer == 16 and body.collision_mask == 1 and body.can_sleep
 		body_layout_ok = body_layout_ok and not body.has_method("configure_sweep")
 		if body.bone_name == "weapon": body_layout_ok = body_layout_ok and body.joint_type == PhysicalBone3D.JOINT_TYPE_NONE
-		# Diagnostic contact records only; no solver or collision setting changes.
-		PhysicsServer3D.body_set_max_contacts_reported(body.get_rid(), 4)
+		# Reporting contacts disables Jolt manifold reduction, changing the solver.
+		# Acceptance must retain the browser controller's zero-report behavior.
+		body_layout_ok = body_layout_ok and PhysicsServer3D.body_get_max_contacts_reported(body.get_rid()) == 0
 	check(body_layout_ok, label + " twelve unswept isolated box bodies with freely released rifle")
 	var transition := {"minimum": [INF, INF], "bone": ["", ""], "plane": ["", ""], "frame": [-1, -1]}
 	var finite := true
@@ -252,7 +253,7 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 			last_tick = Engine.get_physics_frames() # Twelve intentionally stationary ticks were independently checked.
 	var final := Geometry.clearance(previous, setup.planes)
 	check(finite and initial.finite and final.finite and maximum_tick_gap == 1, label + " finite original vertices sampled every unpaused native tick")
-	check(contacts > 0, label + " actual native contacts exercised")
+	check(contacts == 0, label + " native contact reporting remains disabled like the browser fixture")
 	check(final.minimum[0] >= -0.005 and final.minimum[1] >= -0.002, label + " final actual body/rifle contact bounds")
 	check(transition.minimum[0] >= minf(-0.01, initial.minimum[0] - 0.005), label + " no new deep body penetration (initial violation separate)")
 	check(transition.minimum[1] >= minf(-0.01, initial.minimum[1] - 0.005), label + " no rifle tunneling")
@@ -266,6 +267,8 @@ func measure_case(team: String, scene: String, yaw: float, distance := 0.326) ->
 		"starting_withdrawal": starting_withdrawal, "activation_max_vertex_delta": activation_delta,
 		"transition": transition, "final": final, "native_sleep": native_sleep, "frozen_frame": first_frozen,
 		"sampled_physics_ticks": sampled_ticks, "maximum_tick_gap": maximum_tick_gap, "max_reported_contacts_per_body": contacts,
+		"native_contact_reporting": false,
+		"ccd_movement_threshold": ProjectSettings.get_setting_with_override(Controller.CCD_SETTING),
 		"pause": pause_result, "bake": bake_result}
 	rows.append(row)
 	completed[label] = true
@@ -369,6 +372,25 @@ func geometry_weight_checks() -> void:
 	check(not Geometry.weight_sum_supported(1.001) and not Geometry.weight_sum_supported(0.0)
 		and not Geometry.weight_sum_supported(INF) and not Geometry.weight_sum_supported(NAN), "invalid weight sums remain rejected")
 
+func reject_wrong_ccd() -> void:
+	check(ProjectSettings.get_setting_with_override(Controller.CCD_SETTING) != Controller.CCD_MOVEMENT_THRESHOLD,
+		"rejection probe starts with an unsupported actual CCD threshold")
+	var setup: Dictionary = await prepare("ct","flat",0)
+	var actor: Actor = setup.actor
+	var callback := actor.rig.skeleton.modifier_callback_mode_process
+	var before := Geometry.poses(actor.rig)
+	var helper := Controller.new()
+	check(not helper.activate(actor.rig) and helper.last_error.contains("0.25 Jolt CCD movement threshold"),
+		"default or wrong startup CCD threshold is rejected explicitly")
+	check(not helper.active and helper.bodies.is_empty() and helper.simulator == null
+		and actor.model.find_children("*","PhysicalBone3D",true,false).is_empty()
+		and actor.rig.skeleton.modifier_callback_mode_process == callback and Geometry.poses(actor.rig) == before,
+		"rejected configuration creates no physics bodies or pose/callback mutation")
+	helper.dispose()
+	fixture.free()
+	print("DEATH_PHYSICS_CCD_REJECTION: ",passed,"/",passed+failed," passed")
+	quit(1 if failed else 0)
+
 func run() -> void:
 	var started := Time.get_ticks_usec()
 	var probe := Node3D.new()
@@ -377,9 +399,14 @@ func run() -> void:
 	probe.free()
 	var configured := str(ProjectSettings.get_setting("physics/3d/physics_engine"))
 	var slop := float(ProjectSettings.get_setting("physics/jolt_physics_3d/simulation/penetration_slop"))
+	var ccd := float(ProjectSettings.get_setting_with_override(Controller.CCD_SETTING))
 	check(backend == "JoltPhysicsDirectSpaceState3D" and configured == "Jolt Physics" and slop == 0.005,
 		"caller supplies actual Jolt backend with 5 mm penetration slop")
 	check(Engine.physics_ticks_per_second == 60, "caller supplies 60 Hz physics")
+	if failed == 0 and OS.get_cmdline_user_args().has("--expect-ccd-rejection"):
+		await reject_wrong_ccd()
+		return
+	check(ccd == Controller.CCD_MOVEMENT_THRESHOLD, "caller supplies Jolt CCD movement threshold 0.25")
 	if failed > 0:
 		print("DEATH_PHYSICS: ", passed, "/", passed + failed, " passed; cases=0/22")
 		quit(1)
@@ -402,7 +429,8 @@ func run() -> void:
 		var file := FileAccess.open(output, FileAccess.WRITE)
 		check(file != null, "optional artifact output opens")
 		if file != null:
-			file.store_string(JSON.stringify({"backend": backend, "penetration_slop": slop, "cases": rows,"readiness_cases":readiness_rows,
+			file.store_string(JSON.stringify({"backend": backend, "penetration_slop": slop, "ccd_movement_threshold":ccd,
+				"cases": rows,"readiness_cases":readiness_rows,
 				"passed": passed, "failed": failed, "elapsed_seconds": (Time.get_ticks_usec() - started) / 1000000.0,
 				"measurement": "Original indexed skinned body/rifle vertices at native physics tick snapshots; supporting planes, not continuous CCD. Initial live-pose violations separate. Elapsed time is whole-suite runtime, not solver cost or FPS."}, "  "))
 			file.close()

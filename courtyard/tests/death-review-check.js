@@ -14,7 +14,7 @@ const summary={failures:0,failure_labels:[],captures:108,clip_fps:30,clip_reques
   cases:CASES.map(id=>{
     const [team,placement]=id.split('-');
     return {team,placement,body_count:12,joint_count:10,native_awake_observed:true,native_sleep:true,geometry:geometry(id),sleep_tick:200,last_recorded_tick:200,recorded_frames:201,
-      recording_3d_disabled:true,modifier_updates:200,
+      recording_3d_disabled:true,modifier_updates:200,ccd_movement_threshold:.25,native_contact_reporting:false,
       maximum_tick_gap:1,activation_vertex_delta:0,initial:contact([.003,1.1]),initial_violation:false,
       vertices:team==='ct' ? [3182,551] : [3129,564],activation_usec:6500,backend:'JoltPhysicsDirectSpaceState3D',slop:.005,physics_fps:60,
       contact_sampling:'recorded modifier snapshots; not continuous CCD',transition:{...contact([.002,.001]),samples:201,tick:[2,45]},final:contact([.01,.006])};
@@ -49,6 +49,10 @@ reject((values,state)=>state.cases.pop(),/Six simulation/);
 reject((values,state)=>state.cases[0].backend='GodotPhysicsDirectSpaceState3D',/native Jolt/);
 reject((values,state)=>state.cases[0].slop=.02,/5 mm/);
 reject((values,state)=>state.cases[0].slop=NaN,/Finite/);
+for(const wrong of [undefined,.75,.5,0,NaN,'0.25'])
+  reject((values,state)=>state.cases[0].ccd_movement_threshold=wrong,/CCD movement threshold/);
+for(const wrong of [undefined,true,0])
+  reject((values,state)=>state.cases[0].native_contact_reporting=wrong,/contact reporting disabled/);
 reject((values,state)=>state.cases[0].native_sleep=false,/native sleep/);
 for(let index=0;index<CASES.length;index++)
   reject((values,state)=>delete state.cases[index].native_awake_observed,/native awake state/);
@@ -144,8 +148,11 @@ for(const option of ['--quality=1','--flat-surface','--operator-surface','--wall
   check(()=>assert.throws(()=>validateArguments(['--death-review',option]),/forbid other experiments/));
 const source=fs.readFileSync(path.join(__dirname,'../project.godot'),'utf8');
 const changed=physicsSettings(source);
-check(()=>assert.equal(changed.replace('3d/physics_engine="Jolt Physics"\njolt_physics_3d/simulation/penetration_slop=0.005\n',''),source));
+check(()=>assert.equal(changed.replace('3d/physics_engine="Jolt Physics"\njolt_physics_3d/simulation/penetration_slop=0.005\njolt_physics_3d/simulation/continuous_cd_movement_threshold=0.25\n',''),source));
 check(()=>assert.throws(()=>physicsSettings(changed),/no implicit/));
+for(const threshold of ['0.75','0.25'])
+  check(()=>assert.throws(()=>physicsSettings(source.replace('[physics]\n',`[physics]\njolt_physics_3d/simulation/continuous_cd_movement_threshold=${threshold}\n`)),/no implicit/));
+check(()=>assert.match(changed,/^jolt_physics_3d\/simulation\/continuous_cd_movement_threshold=0\.25$/m));
 const fixture=fs.readFileSync(path.join(__dirname,'death_review.gd'),'utf8');
 check(()=>{
   const isolated=fixturePaths(fixture);

@@ -27,9 +27,9 @@ function validateArguments(args) {
 
 function physicsSettings(source) {
   assert.equal(source.split('[physics]\n').length,2,'Exactly one physics section');
-  assert.doesNotMatch(source,/^(?:3d\/physics_engine|jolt_physics_3d\/simulation\/penetration_slop)=/m,
+  assert.doesNotMatch(source,/^(?:3d\/physics_engine|jolt_physics_3d\/simulation\/(?:penetration_slop|continuous_cd_movement_threshold))=/m,
     'Source project has no implicit death-physics backend override');
-  return source.replace('[physics]\n','[physics]\n3d/physics_engine="Jolt Physics"\njolt_physics_3d/simulation/penetration_slop=0.005\n');
+  return source.replace('[physics]\n','[physics]\n3d/physics_engine="Jolt Physics"\njolt_physics_3d/simulation/penetration_slop=0.005\njolt_physics_3d/simulation/continuous_cd_movement_threshold=0.25\n');
 }
 
 function fixturePaths(source) {
@@ -85,6 +85,8 @@ function validateCase(value,id) {
   assert.equal(value.placement,placement);
   assert.equal(value.backend,'JoltPhysicsDirectSpaceState3D','Actual native Jolt backend');
   assert.ok(Math.abs(finite(value.slop,'penetration slop')-.005)<1e-7,'Jolt 5 mm penetration slop');
+  assert.equal(value.ccd_movement_threshold,.25,'Actual Jolt CCD movement threshold 0.25');
+  assert.equal(value.native_contact_reporting,false,'Native contact reporting disabled; unchanged manifold reduction');
   assert.equal(value.physics_fps,60);
   assert.equal(value.body_count,12);
   assert.equal(value.joint_count,10);

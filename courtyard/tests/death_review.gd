@@ -44,6 +44,7 @@ var failures := 0
 var capture_count := 0
 var failure_labels: Array[String] = []
 var case_summaries: Array[Dictionary] = []
+var physics_only := false
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -109,9 +110,13 @@ func capture(name: String, rig: FieldOperatorRig, frame: Dictionary, data: Dicti
 	check(not root.disable_3d, name + " replay restores the real 3D renderer")
 	write_pose(rig, frame.poses)
 	# Keep all replay frames equally warmed; static world and High graphics.
-	for i in 3: await RenderingServer.frame_post_draw
-	var skin := skin_snapshot(rig, frame.poses)
-	check(skin.valid, name + " actual renderer palette matches recorded pose")
+	for i in 3:
+		if physics_only: await process_frame
+		else: await RenderingServer.frame_post_draw
+	var skin := {}
+	if not physics_only:
+		skin = skin_snapshot(rig, frame.poses)
+		check(skin.valid, name + " actual renderer palette matches recorded pose")
 	var recorded_vertices := Geometry.points(data,frame.poses)
 	var actual_vertices := Geometry.points(data,Geometry.poses(rig))
 	var replay_delta := Geometry.max_delta(recorded_vertices,actual_vertices)
@@ -123,6 +128,11 @@ func capture(name: String, rig: FieldOperatorRig, frame: Dictionary, data: Dicti
 	var replay_tolerance := maxf(0.000002,2 * coordinate_scale * pow(2.0,-23))
 	check(replay_delta <= replay_tolerance, name + " replay preserves recorded indexed vertices")
 	var contact := Geometry.clearance(actual_vertices, planes)
+	if physics_only:
+		# Same map, Driver, native snapshots and vertex replay; no PNG/palette
+		# claims from the dummy renderer. Remote review still gates real images.
+		capture_count += 1
+		return
 	var render: Dictionary = game.render_budget.details(game.get_viewport())
 	check(render.quality == "High" and render.scale_3d == 1.0 and render.render_3d == render.viewport_pixels,
 		name + " unchanged full-resolution High graphics")
@@ -185,6 +195,10 @@ func case_review(team: String, placement: String) -> void:
 		return
 	var activation_delta := Geometry.max_delta(before,Geometry.points(geometry,controller.latest_global_poses))
 	check(activation_delta == 0.0, "activation preserves every original vertex exactly")
+	var contact_reporting := false
+	for body in controller.bodies:
+		contact_reporting = contact_reporting or PhysicsServer3D.body_get_max_contacts_reported(body.get_rid()) != 0
+	check(not contact_reporting, "native contact reporting remains disabled; unchanged Jolt manifold reduction")
 	var driver := Driver.new()
 	game.add_child(driver)
 	# This phase only records native physics/modifier poses. Headless A/B checks
@@ -211,6 +225,8 @@ func case_review(team: String, placement: String) -> void:
 		"recording_3d_disabled":root.disable_3d,"modifier_updates":controller.modifier_updates,
 		"activation_usec":controller.activation_usec,"backend":game.get_world_3d().direct_space_state.get_class(),
 		"slop":ProjectSettings.get_setting_with_override("physics/jolt_physics_3d/simulation/penetration_slop"),
+		"ccd_movement_threshold":ProjectSettings.get_setting_with_override(Death.CCD_SETTING),
+		"native_contact_reporting":contact_reporting,
 		"physics_fps":Engine.physics_ticks_per_second,"contact_sampling":"recorded modifier snapshots; not continuous CCD"}
 	controller.dispose()
 	root.disable_3d = false
@@ -239,7 +255,12 @@ func case_review(team: String, placement: String) -> void:
 	await process_frame
 
 func run() -> void:
-	if DisplayServer.get_name() == "headless" or not OS.has_feature("web"):
+	physics_only = OS.get_cmdline_user_args().has("--physics-only")
+	if physics_only and (DisplayServer.get_name() != "headless" or not OS.get_cmdline_user_args().has("--test")):
+		printerr("Physics-only death review requires headless --test")
+		quit(1)
+		return
+	if not physics_only and (DisplayServer.get_name() == "headless" or not OS.has_feature("web")):
 		printerr("Death review requires the isolated browser renderer")
 		quit(1)
 		return
@@ -268,8 +289,22 @@ func run() -> void:
 	camera.current = true
 	for team in ["ct","t"]:
 		for placement in ["flat","wall","ramp"]: await case_review(team,placement)
-	check(capture_count == 18+CLIP_FRAMES, "all expected stills and clip frames captured")
+	check(case_summaries.size() == 6, "all six actual-map contact cases completed")
+	check(capture_count == 18+CLIP_FRAMES, "all expected still and clip poses replayed")
+	if physics_only:
+		var evidence := {"physics_only":true,"rendered":false,"failures":failures,"failure_labels":failure_labels,
+			"cases":case_summaries,"pose_replays":capture_count,
+			"measurement":"Headless actual-map native physics and indexed vertex replay; no GPU palette, image or FPS evidence"}
+		for argument in OS.get_cmdline_user_args():
+			if argument.begins_with("--output="):
+				var file := FileAccess.open(argument.trim_prefix("--output="),FileAccess.WRITE)
+				check(file != null,"headless actual-map evidence output opens")
+				if file != null: file.store_string(JSON.stringify(evidence,"  "))
+		print("DEATH_PHYSICS_REVIEW_OK" if failures == 0 else "DEATH_PHYSICS_REVIEW_FAIL",
+			" cases=",case_summaries.size()," pose_replays=",capture_count," failures=",failures)
+		quit(1 if failures else 0)
+		return
 	JavaScriptBridge.eval("window.deathReviewSummary="+JSON.stringify({"failures":failures,"failure_labels":failure_labels,
 		"captures":capture_count,"cases":case_summaries,"clip_fps":30,"clip_requested_ticks":[0,178],
 		"clip_note":"first three seconds replayed at original 60 Hz timing, followed separately by the rest still; not gameplay FPS"})+";window.mapReviewComplete=true",true)
-	print("DEATH_REVIEW_OK captures=",capture_count," failures=",failures)
+	print("DEATH_REVIEW_OK" if failures == 0 else "DEATH_REVIEW_FAIL", " captures=",capture_count," failures=",failures)
