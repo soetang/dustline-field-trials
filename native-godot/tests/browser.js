@@ -61,13 +61,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
       // This is an engine-rendered canvas, not a DOM font/layout test.
       // Capture the compositor surface directly: Playwright's extra font/RAF
       // wait can time out under SwiftShader even after controls have passed.
-      const {data} = await captureSession.send('Page.captureScreenshot',{
-        format:'png',fromSurface:true,captureBeyondViewport:false,
-        clip:{x:0,y:0,width:1280,height:720,scale:Number(process.env.TEST_DPR || 1)},
-      });
-      const png=Buffer.from(data,'base64');
+      const png=await require('./browser-capture')(captureSession,1280,720,Number(process.env.TEST_DPR || 1));
       assert.equal(png.readUInt32BE(0),0x89504e47);
       fs.writeFileSync(path.join(artifacts,filename),png);
+      assert.ok(Math.abs(await page.evaluate(() => devicePixelRatio)-Number(process.env.TEST_DPR || 1))<0.0001,
+        'Screenshot must not change the emulated display pixel ratio');
     }
     await page.addInitScript(() => {
       // Read the actual engine's committed linear-memory capacity. This is
