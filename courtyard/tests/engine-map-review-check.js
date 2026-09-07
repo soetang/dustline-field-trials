@@ -87,8 +87,8 @@ function syntheticReview(patched = false) {
       camera: {mode: 'player', position_xyz: transform.slice(9), basis: [transform.slice(0, 3), transform.slice(3, 6), transform.slice(6, 9)],
         fov_degrees: 80, near: REPORT.camera.near, far: 200, keep_aspect: 1, transform, top_level: true, current: true},
       environment: {background_mode: 2, sky_class: 'Sky', sky_material_class: 'ProceduralSkyMaterial', tonemap_mode: 2,
-        tonemap_exposure: 0.95, fog_enabled: true, fog_density: 0.0016, fog_sky_affect: 0.15, ssao_enabled: high,
-        ssao_radius: 1.3, ssao_intensity: 1, ambient_energy: 0.4, ambient_color: [0.7, 0.8, 0.9, 1], fog_light_color: [0.8, 0.7, 0.6, 1],
+        tonemap_exposure: 0.98, fog_enabled: true, fog_density: 0.0018, fog_sky_affect: 0.18, ssao_enabled: high,
+        ssao_radius: 1.3, ssao_intensity: 1, ambient_energy: 0.48, ambient_color: [0.7, 0.8, 0.9, 1], fog_light_color: [0.8, 0.7, 0.6, 1],
         sky_colors: {top: [0.3, 0.4, 0.7, 1], horizon: [0.5, 0.4, 0.3, 1],
           ground_bottom: [0.3, 0.4, 0.5, 1], ground_horizon: [0.6, 0.5, 0.4, 1]}},
       shadows: [{enabled: true, mode: high ? 2 : 1, distance: high ? 110 : stage.quality === 'Balanced' ? 70 : 50,
@@ -120,6 +120,16 @@ function rejects(change, message) {
   });
 }
 
+function resizedImage(changedPixels, delta) {
+  return capture => {
+    const image = imageFor(capture);
+    if (capture.name !== 'reported-high-size-restored') return image;
+    const data = Buffer.from(image.data);
+    for (let index = 0; index < changedPixels; index++) data[index * 4] += delta;
+    return {...image, data};
+  };
+}
+
 check(() => {
   const a = syntheticReview(), b = syntheticReview(true), before = JSON.stringify([a, b]);
   const result = compareReviews(a, b, imageFor, imageFor);
@@ -128,6 +138,21 @@ check(() => {
   assert.deepEqual(result.pairs.map(pair => pair.steady_depth_blits_delta), [-3, 0, 0, -3, -3, -3, -3, -3]);
   assert.deepEqual(result.pairs[0].setup_allocations.map(value => value.textures), [4, 8], 'Setup allocations recorded without an invented exact delta');
   assert.equal(JSON.stringify([a, b]), before, 'Input evidence not mutated');
+});
+check(() => {
+  const a = syntheticReview(), b = syntheticReview(true);
+  for (const review of [a, b]) {
+    const steady = review.captures[0].steady_audit;
+    steady.calls.framebufferTexture2D = 18;
+    steady.totals.attachments = steady.totals.color_attachments = 18;
+  }
+  assert.equal(compareReviews(a, b, imageFor, imageFor).pairs.length, 8,
+    'Existing sky color attachments are allowed when exactly matched');
+  b.captures[0].steady_audit.calls.framebufferTexture2D++;
+  b.captures[0].steady_audit.totals.attachments++;
+  b.captures[0].steady_audit.totals.color_attachments++;
+  assert.throws(() => compareReviews(a, b, imageFor, imageFor), /expected steady calls.framebufferTexture2D delta/,
+    'Additional patched-engine attachments remain rejected');
 });
 rejects(value => value.engine_map_review = false, /strictly equal/);
 rejects(value => value.staged = false, /staged/);
@@ -156,6 +181,10 @@ rejects((value, capture) => capture.camera.fov_degrees = 75, /Reported lens/);
 rejects((value, capture) => capture.camera.basis[2][2] *= -1, /basis/);
 rejects((value, capture) => capture.environment.background_mode = 1, /sky/);
 rejects((value, capture) => capture.environment.tonemap_mode = 0, /filmic/);
+rejects((value, capture) => capture.environment.tonemap_exposure = 0.95, /Filmic exposure/);
+rejects((value, capture) => capture.environment.fog_density = 0.0016, /Fog density/);
+rejects((value, capture) => capture.environment.fog_sky_affect = 0.15, /Sky fog/);
+rejects((value, capture) => capture.environment.ambient_energy = 0.4, /ambient energy/);
 rejects((value, capture) => capture.environment.ssao_enabled = false, /strictly equal/);
 rejects((value, capture) => capture.environment.fog_enabled = false, /strictly equal/);
 rejects((value, capture) => capture.environment.sky_colors.top[0] = Infinity, /Sky color/);
@@ -184,6 +213,11 @@ for (const phase of ['before', 'setup', 'steady', 'final']) {
 }
 rejects((value, capture) => capture.setup_audit.totals.incomplete = 1, /incomplete/);
 rejects((value, capture) => capture.steady_audit.calls.texImage2D = 1, /strictly equal/);
+rejects((value, capture) => {
+  capture.steady_audit.calls.texImage2D = 1;
+  capture.steady_audit.totals.texture_allocations = 1;
+  capture.steady_audit.totals.color_texture_allocations = 1;
+}, /No steady texture_allocations/);
 rejects((value, capture) => delete capture.steady_audit.calls.blitFramebuffer, /exact fields/);
 check(() => assert.throws(() => validateReview(syntheticReview(), () => ({width: 1, height: 1, data: Buffer.alloc(4)})), /PNG dimensions/));
 check(() => assert.throws(() => validateReview(syntheticReview(), capture => {
@@ -198,6 +232,21 @@ check(() => assert.throws(() => validateReview(syntheticReview(), capture => {
   data[0]++;
   return {...image, data};
 }), /restores exact/));
+check(() => {
+  const result = validateReview(syntheticReview(), resizedImage(2, 1));
+  assert.equal(result.restored_images_exact, false, 'Measured resize variance is not called exact');
+  assert.deepEqual(result.same_engine_restorations[1], {name: 'reported-high-size-restored',
+    changed_pixels: 2, max_channel_delta: 1, absolute_channel_delta: 2,
+    allowed_changed_pixels: 27, allowed_max_channel_delta: 1});
+  assert.equal(result.same_engine_restorations[0].changed_pixels, 0);
+  assert.equal(result.same_engine_restorations[0].allowed_changed_pixels, 0);
+});
+check(() => assert.equal(validateReview(syntheticReview(), resizedImage(27, 1)).same_engine_restorations[1].changed_pixels, 27));
+check(() => assert.throws(() => validateReview(syntheticReview(), resizedImage(1, 2)), /exceeds one LSB/));
+check(() => assert.throws(() => validateReview(syntheticReview(), resizedImage(28, 1)), /exceeds 0.001%/));
+check(() => assert.throws(() => compareReviews(syntheticReview(), syntheticReview(true), imageFor, resizedImage(2, 1)),
+  /reported-high-size-restored: original\/patched PNG mismatch.*changed_pixels":2/,
+  'Same-engine resize allowance never loosens original/patched image comparison'));
 check(() => {
   const a = syntheticReview(), b = syntheticReview(true);
   b.captures[0].steady_audit.calls.checkFramebufferStatus++;
