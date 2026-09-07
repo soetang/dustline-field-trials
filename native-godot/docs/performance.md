@@ -1,5 +1,9 @@
 # Browser performance: 0.4.3–0.4.5
 
+Measurement correction: earlier 1920×882 figures describe the window; its
+letterboxed 3D target was 1568×882. Version 0.4.7 reports these separately as
+`viewport` and `viewport_pixels`. Paired comparisons used matching targets.
+
 ## Budget and method
 
 The first desktop target is stable 1080p / 60 FPS: 16.67 ms per frame, preferably

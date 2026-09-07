@@ -13,7 +13,7 @@ const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
 const FrameMetrics = preload("res://scripts/frame_metrics.gd")
 const RenderBudget = preload("res://scripts/render_budget.gd")
-const BUILD := "courtyard-0.4.6-supply-crates"
+const BUILD := "courtyard-0.4.7-repeek-focus"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld

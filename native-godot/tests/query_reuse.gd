@@ -1,7 +1,8 @@
 extends SceneTree
 
-## Exact duplicate-query removal: count calls and compare the old decisions,
-## shot arguments, RNG state, and contact state. No wall-clock performance test.
+## Duplicate-query removal: count calls and compare the old decisions, shot
+## arguments and RNG state. Failed LOS now deliberately clears precision focus;
+## all other shot state stays identical. No wall-clock performance test.
 const Bot = preload("res://scripts/bot.gd")
 
 class CountingLayout:
@@ -172,8 +173,8 @@ func shot_state() -> Dictionary:
 		"fires": fixture.fires.duplicate(true), "sounds": fixture.sound.calls.duplicate(true)}
 
 func old_outer_fire() -> void:
-	# Original outer gate: failed LOS does NOT invoke shoot() and therefore
-	# must not reset contact_age/higher_aim, unlike a direct failed shoot().
+	# Historical gate for query-count/state comparison. Its stale precision on
+	# failed LOS is the explicit fairness exception recorded in shot_case().
 	if is_instance_valid(bot.target) and bot.target.health > 0 and bot.reaction <= 0 and bot.cooldown <= 0 and bot.burst_pause <= 0 and bot.reload_left <= 0 and bot.see(bot.target):
 		bot.shoot()
 
@@ -186,14 +187,19 @@ func configure_shot(settings: Dictionary) -> void:
 		elif property == "target_speed": fixture.player.velocity.x = settings[property]
 		else: bot.set(property, settings[property])
 
-func shot_case(label: String, settings: Dictionary, old_calls: int, new_calls: int) -> void:
+func shot_case(label: String, settings: Dictionary, old_calls: int, new_calls: int, resets_focus: bool = false) -> void:
 	configure_shot(settings)
 	old_outer_fire()
 	var expected := shot_state()
 	var original_calls := bot.sight_calls
+	if resets_focus:
+		# Only these two fields intentionally differ from the historical gate.
+		# Keep ammo, sound, burst state, samples, RNG and all other fields strict.
+		expected.contact_age = 0.0
+		expected.higher_aim = false
 	configure_shot(settings)
 	bot._physics_process(0)
-	check(shot_state() == expected, label + ": identical shot, sound, contact, burst and RNG state")
+	check(shot_state() == expected, label + ": exact shot, sound, burst, RNG and intended contact state")
 	check(original_calls == old_calls and bot.sight_calls == new_calls, label + ": expected sight call reduction")
 
 func add_capsule(actor: Actor) -> void:
@@ -258,7 +264,7 @@ func run() -> void:
 	shot_case("waiting cooldown", {"cooldown": 1.0}, 0, 0)
 	shot_case("waiting burst pause", {"burst_pause": 1.0}, 0, 0)
 	shot_case("waiting reload", {"reload_left": 1.0}, 0, 0)
-	shot_case("outside FOV", {"rotation": Vector3(0, PI, 0)}, 1, 1)
+	shot_case("outside FOV", {"rotation": Vector3(0, PI, 0)}, 1, 1, true)
 
 	configure_shot({})
 	check(bot.shoot() and bot.sight_calls == 1 and bot.ammo == 29, "direct shoot still validates sight and fires")
@@ -267,12 +273,13 @@ func run() -> void:
 
 	wall.position.x = 0
 	for i in 2: await physics_frame
-	shot_case("wall blocks outer fire", {}, 1, 1)
-	check(bot.contact_age == 1.7 and bot.higher_aim and bot.shots == 0, "outer failed LOS preserves contact and aim")
-	var expected_age := bot.contact_age + 1.0 / 60.0
+	shot_case("wall blocks outer fire", {}, 1, 1, true)
+	check(bot.contact_age == 0 and not bot.higher_aim and bot.shots == 0, "outer failed LOS clears precision focus without firing")
+	var expected_blocked := shot_state()
+	expected_blocked.think_left -= 1.0 / 60.0
 	bot.sight_calls = 0
 	bot._physics_process(1.0 / 60.0)
-	check(bot.contact_age == expected_age and bot.higher_aim and bot.sight_calls == 1, "failed LOS retains normal per-tick contact aging")
+	check(shot_state() == expected_blocked and bot.sight_calls == 1, "continued failed LOS prevents focus aging without changing shot, sound, burst, RNG or query count")
 	configure_shot({})
 	check(not bot.shoot() and bot.sight_calls == 1 and bot.contact_age == 0 and not bot.higher_aim, "direct failed LOS still resets contact and aim")
 	wall.position.x = 100

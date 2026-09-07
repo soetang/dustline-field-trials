@@ -121,7 +121,27 @@ func run() -> void:
 	shooter.contact_age = 3
 	shooter.higher_aim = true
 	check(not shooter.shoot() and shooter.contact_age == 0 and not shooter.higher_aim, "Losing sight clears precision focus and cannot fire through cover")
+	# Exercise the live physics continuation, not only the direct shoot() entry.
+	# Keep think() asleep so a cover break between perception scans is observed
+	# by the same LOS query that would otherwise allow this burst to continue.
+	shooter.contact_age = 3
+	shooter.higher_aim = true
+	shooter.burst_shots = 1
+	shooter.burst_left = 3
+	shooter.reaction = 0
+	shooter.burst_pause = 0
+	shooter.reload_left = 0
+	shooter.think_left = 1
+	shooter.path = PackedVector3Array()
+	shooter.look_goal = game.player.position + Vector3.UP * 1.3
+	shooter.velocity = Vector3.ZERO
+	var shots_before: int = shooter.shots
+	shooter._physics_process(1.0 / 60.0)
+	check(shooter.shots == shots_before and shooter.contact_age == 0 and not shooter.higher_aim, "Live firing loses precision across a cover break between think scans")
 	cover.queue_free()
+	await frames(2)
+	shooter._physics_process(1.0 / 60.0)
+	check(shooter.shots == shots_before + 1 and shooter.contact_age < 0.1 and not shooter.higher_aim, "First re-peek resumes a body-focused shot instead of stale precision")
 	print("AIM: ", checks - failures, "/", checks, " passed")
 	game.queue_free()
 	await process_frame

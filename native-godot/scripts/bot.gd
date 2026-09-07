@@ -238,8 +238,14 @@ func _physics_process(dt: float) -> void:
 		else: stuck_time = 0
 		progress_at = position
 		progress_left = 0.4
-	if not working_defuse and not working_plant and is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0 and see(target):
-		_shoot_visible_target()
+	if not working_defuse and not working_plant and is_instance_valid(target) and target.health > 0 and reaction <= 0 and cooldown <= 0 and burst_pause <= 0 and reload_left <= 0:
+		if see(target):
+			_shoot_visible_target()
+		else:
+			# A brief cover break can fall between think() scans. Drop precision
+			# here too, so the first re-peek cannot inherit settled higher aim.
+			contact_age = 0
+			higher_aim = false
 
 func shoot() -> bool:
 	if not is_instance_valid(target) or target.health <= 0 or health <= 0 or game.phase != "LIVE" or cooldown > 0 or reload_left > 0: return false

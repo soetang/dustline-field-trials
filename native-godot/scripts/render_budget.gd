@@ -5,10 +5,19 @@ const NAMES := ["Balanced", "Performance", "High"]
 var level := 2
 
 static func pixel_size(viewport: Viewport) -> Vector2:
-	# Window.size is the physical framebuffer. get_visible_rect() is logical
-	# HUD size under canvas_items stretching; ViewportTexture.get_size() can
-	# include its content stretch and over-report the main window's pixels.
+	# Preserve the existing cap policy based on the physical window, including
+	# letterbox/pillarbox margins. This is not necessarily the drawable target.
+	# ViewportTexture.get_size() can apply content stretching a second time.
 	return viewport.size if viewport is Window else viewport.get_texture().get_size()
+
+static func actual_render_size(viewport: Viewport) -> Vector2i:
+	# Telemetry only: the root Window's logical rect times its content stretch
+	# recovers the target passed to RenderingServer, excluding black margins.
+	# Do not use get_image(): that would introduce a synchronous GPU readback.
+	# SubViewport.size is already physical, even with a non-stretched 2D override.
+	if viewport is SubViewport: return viewport.size
+	var pixels := viewport.get_visible_rect().size * viewport.get_stretch_transform().get_scale()
+	return Vector2i(pixels.round()).maxi(2)
 
 static func scale_for(size: Vector2, quality: int) -> float:
 	# The HUD stays at full display resolution. Bound only 3D fill cost on
@@ -30,8 +39,11 @@ func apply(game: Node3D) -> void:
 
 func details(viewport: Viewport) -> Dictionary:
 	var size := pixel_size(viewport)
+	var pixels := actual_render_size(viewport)
 	var logical := viewport.get_visible_rect().size
-	return {"quality": NAMES[level], "ssao": level == 2, "viewport": [size.x,size.y], "logical_size": [logical.x,logical.y], "scale_3d": viewport.scaling_3d_scale,
-		"render_3d": [roundi(size.x * viewport.scaling_3d_scale), roundi(size.y * viewport.scaling_3d_scale)],
+	# The engine truncates positive fractional 3D target dimensions to integers.
+	var render_size := Vector2i(maxi(int(pixels.x * viewport.scaling_3d_scale),1), maxi(int(pixels.y * viewport.scaling_3d_scale),1))
+	return {"quality": NAMES[level], "ssao": level == 2, "viewport": [size.x,size.y], "viewport_pixels": [pixels.x,pixels.y], "logical_size": [logical.x,logical.y], "scale_3d": viewport.scaling_3d_scale,
+		"render_3d": [render_size.x,render_size.y],
 		"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		"primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)}

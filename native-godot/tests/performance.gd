@@ -14,7 +14,61 @@ func check(ok: bool, label: String) -> void:
 func _initialize() -> void:
 	call_deferred("run")
 
+func check_render_dimensions() -> void:
+	# Off-tree Window: exercises real engine layout calculations without opening
+	# another native window, allocating a render target, or reading back pixels.
+	var window := Window.new()
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	window.content_scale_size = Vector2i(1600,900)
+	var budget := Budget.new()
+	for fixture in [
+		[Vector2i(1920,882),Vector2i(1568,882)],
+		[Vector2i(1280,720),Vector2i(1280,720)],
+		[Vector2i(1920,1080),Vector2i(1920,1080)],
+		[Vector2i(900,1600),Vector2i(900,506)],
+	]:
+		window.size = fixture[0]
+		var expected: Vector2i = fixture[1]
+		var details := budget.details(window)
+		check(Budget.actual_render_size(window) == expected,"Actual drawable dimensions for %s" % fixture[0])
+		check(details.viewport == [float(window.size.x),float(window.size.y)],"Telemetry preserves physical window dimensions")
+		check(details.viewport_pixels == [expected.x,expected.y],"Telemetry separately reports actual viewport pixels")
+		check(details.render_3d == [expected.x,expected.y],"High 3D dimensions exclude black margins")
+		check(details.quality == "High" and details.ssao and details.scale_3d == 1,"Dimension reporting leaves High unchanged")
+		check(Budget.pixel_size(window) == Vector2(window.size),"Dimension fix does not change existing cap-policy inputs")
+	window.size = Vector2i(1920,882)
+	window.content_scale_factor = 2.0
+	check(window.get_visible_rect().size == Vector2(800,450),"Content scale changes logical UI size")
+	check(Budget.actual_render_size(window) == Vector2i(1568,882),"Content scale does not multiply target size twice")
+	check(budget.details(window).logical_size == [800.0,450.0],"Logical dimensions remain separately visible")
+	window.content_scale_factor = 1.0
+	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	check(Budget.actual_render_size(window) == Vector2i(1920,882),"Expand aspect has a full-window drawable target")
+	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	check(Budget.actual_render_size(window) == Vector2i(1600,900),"Viewport stretch reports its actual fixed-size render target")
+	window.content_scale_factor = 2.0
+	check(Budget.actual_render_size(window) == Vector2i(800,450),"Viewport mode content scale reduces its actual target")
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	check(Budget.actual_render_size(window) == Vector2i(1920,882),"Disabled stretching reports the full drawable target")
+	window.free()
+	var subviewport := SubViewport.new()
+	subviewport.size = Vector2i(641,359)
+	subviewport.size_2d_override = Vector2i(1000,600)
+	for stretch in [false,true]:
+		subviewport.size_2d_override_stretch = stretch
+		check(Budget.actual_render_size(subviewport) == Vector2i(641,359),"SubViewport uses physical size with stretch=%s" % stretch)
+		check(budget.details(subviewport).render_3d == [641,359],"SubViewport logical override cannot inflate High 3D metadata")
+	subviewport.scaling_3d_scale = 0.5
+	var details := budget.details(subviewport)
+	check(details.viewport_pixels == [641,359],"3D scaling leaves the base target dimensions unchanged")
+	check(details.render_3d == [320,179],"Fractional 3D dimensions follow renderer truncation, not rounding")
+	check(subviewport.scaling_3d_scale == 0.5 and budget.level == 2,"Reading details does not mutate render state")
+	subviewport.free()
+
 func run() -> void:
+	check_render_dimensions()
 	var metrics := Metrics.new()
 	metrics.record(1000000,true)
 	for i in 100: metrics.record(1000000+(i+1)*20000,true)
