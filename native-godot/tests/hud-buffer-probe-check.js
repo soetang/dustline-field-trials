@@ -15,6 +15,12 @@ function check(label, fn) {
   try { fn(); checks++; }
   catch (error) { console.error(`FAIL: ${label}`); throw error; }
 }
+check('pinned Playwright exports the actual HUD screenshot decoder', () => {
+  const {PNG}=require('playwright-core/lib/utilsBundle');
+  const source=new PNG({width:1,height:1});
+  source.data.fill(128);
+  assert.deepEqual(PNG.sync.read(PNG.sync.write(source)).data,source.data);
+});
 function forbidden(name) {
   return function() {
     extraCalls.push(name);

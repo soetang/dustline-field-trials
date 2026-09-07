@@ -296,10 +296,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
     const expectedHud=['buy','live','damage','spectator','scoreboard','pause','resized'].flatMap(name=>[`${name}-reference`,`${name}-retained`]);
     assert.deepEqual(captures.map(c => c.name),engineLifecycle ? ['depth-only','depth-and-color','resized','msaa-2x','msaa-4x','restored'] : gameplayProfile ? expectedGameplay : hudReview ? expectedHud : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
     if (hudReview) {
-      const {PNG}=require('playwright-core/lib/utilsBundle.js');
       // Preserve all evidence even when the candidate's first comparison fails.
       for (const capture of captures) fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
       fs.writeFileSync(path.join(artifacts,'hud-comparison.json'),JSON.stringify(captures.map(({png,...data})=>data),null,2)+'\n');
+      const {PNG}=require('playwright-core/lib/utilsBundle');
       for (let i=0;i<captures.length;i+=2) {
         const reference=captures[i],retained=captures[i+1];
         for (const field of ['quality','ssao','scale_3d','viewport','viewport_pixels','logical_size','render_3d'])
@@ -307,10 +307,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
         assert.equal(retained.render.quality,'High');
         assert.equal(retained.render.scale_3d,1);
         assert.equal(retained.render.ssao,true);
-        assert.equal(reference.frames,24);
-        assert.equal(retained.frames,24);
+        assert.equal(reference.frames,8);
+        assert.equal(retained.frames,8);
         const a=PNG.sync.read(Buffer.from(reference.png,'base64')),b=PNG.sync.read(Buffer.from(retained.png,'base64'));
         assert.deepEqual([a.width,a.height],[b.width,b.height]);
+        const size=reference.name.startsWith('resized-') ? [1280,720] : [960,540];
+        for (const capture of [reference,retained]) {
+          assert.deepEqual(capture.canvas_size,size,'Browser canvas actually resized');
+          assert.deepEqual(capture.render.viewport_pixels,size,'Engine drawable target follows canvas');
+        }
+        assert.deepEqual([a.width,a.height],size,'Readback verifies the expected target dimensions');
         let changed=0,maximum=0;
         for (let offset=0;offset<a.data.length;offset++) {
           const delta=Math.abs(a.data[offset]-b.data[offset]);

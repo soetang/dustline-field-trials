@@ -18,11 +18,12 @@ func freeze(node: Node) -> void:
 func capture(label: String, candidate: bool) -> void:
 	reference.visible = not candidate
 	retained.visible = candidate
-	for i in 12: await RenderingServer.frame_post_draw
+	for i in 6: await RenderingServer.frame_post_draw
 	JavaScriptBridge.eval("window.hudBufferProbe.reset()",true)
-	for i in 24: await RenderingServer.frame_post_draw
+	for i in 8: await RenderingServer.frame_post_draw
 	var data := {"name":label + ("-retained" if candidate else "-reference"),
-		"frames":24,"render":game.render_budget.details(game.get_viewport()),
+		"frames":8,"render":game.render_budget.details(game.get_viewport()),
+		"canvas_size":JSON.parse_string(JavaScriptBridge.eval("JSON.stringify([document.getElementById('canvas').width,document.getElementById('canvas').height])",true)),
 		"buffers":JSON.parse_string(JavaScriptBridge.eval("JSON.stringify(window.hudBufferProbe.snapshot())",true)),
 		"png":Marshalls.raw_to_base64(root.get_texture().get_image().save_png_to_buffer())}
 	JavaScriptBridge.eval("window.mapReviewCaptures.push(" + JSON.stringify(data) + ")",true)
@@ -62,7 +63,10 @@ func run() -> void:
 				game.spectator.target.position = Vector3(-7,0,-32)
 			"scoreboard": Input.action_press("scoreboard")
 			"pause": game.paused = true
-			"resized": root.size = Vector2i(1280,720)
+			"resized":
+				# Policy 0 gives this fixture ownership of the browser canvas size.
+				JavaScriptBridge.eval("document.getElementById('canvas').width=1280;document.getElementById('canvas').height=720",true)
+				root.size = Vector2i(1280,720)
 		for hud in [reference,retained]: hud.sync_menu()
 		await capture(label,false)
 		await capture(label,true)
