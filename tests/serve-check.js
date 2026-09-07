@@ -22,6 +22,11 @@ const {createServer} = require('../scripts/serve');
   fs.symlinkSync(path.join(fixture,'.env'),path.join(fixture,'bevy/web/escape'));
   fs.symlinkSync(path.join(fixture,'bevy/Cargo.toml'),path.join(fixture,'bevy/web/internal-escape'));
   const server = createServer(fixture);
+  const readFile = fs.promises.readFile;
+  fs.promises.readFile = function(file,...args) {
+    assert.ok(!/\.(?:wasm|js)$/.test(String(file)),'Static game assets must stream, not allocate a complete readFile buffer');
+    return readFile.call(this,file,...args);
+  };
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${server.address().port}`;
   let checks=0;
@@ -48,6 +53,7 @@ const {createServer} = require('../scripts/serve');
     console.log(`APP_SERVER: ${checks}/${checks} passed; three apps, immutable release URLs, no workspace exposure`);
   } finally {
     await new Promise(resolve=>{ server.close(resolve); server.closeAllConnections(); });
+    fs.promises.readFile = readFile;
     // Only the exact directory allocated by this fixture is removed.
     fs.rmSync(fixture,{recursive:true,force:true});
   }

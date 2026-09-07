@@ -2,6 +2,17 @@ name: Build and publish playable game
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'bevy/README.md'
+      - 'courtyard/README.md'
+      - 'courtyard/docs/**'
+      - 'courtyard/engine/README.md'
+      - 'scripts/serve.js'
+      - 'tests/serve-check.js'
+      - 'tests/check-runner.js'
+      - '.github/workflows/workspace.yml'
   workflow_dispatch:
 permissions:
   contents: read

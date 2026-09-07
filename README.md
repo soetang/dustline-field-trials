@@ -45,6 +45,7 @@ shipped to players. See [Bevy instructions](bevy/README.md) for the older app.
 
 ```sh
 npm test                                  # full Courtyard headless suite
+npm run test:workspace                     # no engine installation needed
 npm run test:courtyard -- pose_reset       # one relevant suite
 npm run test:courtyard -- --list            # discover suites without running them
 npm run test:classic                       # fast JavaScript prototype checks

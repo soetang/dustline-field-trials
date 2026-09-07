@@ -5,6 +5,7 @@
   "scripts": {
     "test": "npm run test:courtyard",
     "test:fast": "bash scripts/check.sh --fast",
+    "test:workspace": "bash scripts/check.sh --workspace",
     "test:courtyard": "bash courtyard/tools/check.sh",
     "test:bevy": "bash bevy/scripts/check.sh",
     "test:classic": "node classic/tests/smoke.js",

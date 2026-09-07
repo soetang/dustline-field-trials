@@ -36,15 +36,18 @@ function createServer(root = path.resolve(__dirname, '..')) {
       if (!file.startsWith(directory+path.sep)) { res.writeHead(403).end(); return; }
       const real = await fs.promises.realpath(file);
       if (!real.startsWith((await fs.promises.realpath(directory))+path.sep)) { res.writeHead(403).end(); return; }
-      if (!(await fs.promises.stat(real)).isFile()) { res.writeHead(404).end(); return; }
-      let data = await fs.promises.readFile(real);
+      const stat = await fs.promises.stat(real);
+      if (!stat.isFile()) { res.writeHead(404).end(); return; }
+      let data;
       // Production's ../../ fallback targets Bevy at the public site root.
       // Locally the root promotes Courtyard, so keep the fallback explicit.
       if (courtyard && relative === 'index.html')
-        data = Buffer.from(data.toString().replaceAll('href="../../"','href="/bevy/bevy.html"'));
+        data = Buffer.from((await fs.promises.readFile(real,'utf8')).replaceAll('href="../../"','href="/bevy/bevy.html"'));
       res.writeHead(200, {'Content-Type':mime[path.extname(file)] || 'application/octet-stream',
-        'Content-Length':data.length,'Cache-Control':'no-cache'});
-      res.end(req.method === 'HEAD' ? undefined : data);
+        'Content-Length':data ? data.length : stat.size,'Cache-Control':'no-cache'});
+      if (req.method === 'HEAD') res.end();
+      else if (data) res.end(data);
+      else fs.createReadStream(real).on('error',()=>res.destroy()).pipe(res);
     } catch (error) {
       res.writeHead(error instanceof URIError ? 400 : 404, {'Content-Type':'text/plain'});
       res.end('App file unavailable. Build Courtyard with npm run build, or Bevy with npm run build:bevy.');
