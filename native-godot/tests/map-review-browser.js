@@ -18,6 +18,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const engineLifecycle = process.argv.includes('--engine-lifecycle');
   const expectCachedBackbuffer = process.argv.includes('--expect-cached-backbuffer');
   const wallReview = process.argv.includes('--wall-review');
+  const hudReview = process.argv.includes('--hud-review');
   const gameplayProfile = process.argv.includes('--gameplay-profile');
   const navigationAbba = process.argv.includes('--navigation-abba');
   const presentationAbba = process.argv.includes('--presentation-abba');
@@ -25,6 +26,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const gpuTiming = process.argv.includes('--gpu-timing');
   const ssaoUnroll = process.argv.includes('--ssao-unroll');
   const operatorSurface = process.argv.includes('--operator-surface');
+  assert.ok(!hudReview || !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=|profile)/.test(arg)),
+    'HUD review preserves the official engine and unchanged High graphics');
   assert.ok(!operatorSurface || ((benchmark || wallReview) && !presentationCache && !gpuTiming && !ssaoUnroll &&
     !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
     'Operator surface merge requires an isolated official-engine High render or wall fixture');
@@ -40,8 +43,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   assert.ok(!presentationCache || ((benchmark || engineLifecycle) && !presentationAbba),'Fixed presentation cache is only available in render/engine fixtures');
   assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
     'GPU timing requires an isolated benchmark or gameplay profile without other experiments');
-  assert.ok([benchmark,wallReview,gameplayProfile,engineLifecycle].filter(Boolean).length <= 1,'Choose one review/profile mode');
-  const longFixture = benchmark || wallReview || gameplayProfile || engineLifecycle;
+  assert.ok([benchmark,wallReview,hudReview,gameplayProfile,engineLifecycle].filter(Boolean).length <= 1,'Choose one review/profile mode');
+  const longFixture = benchmark || wallReview || hudReview || gameplayProfile || engineLifecycle;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
   assert.ok(!steadyProfile || ((benchmark || gameplayProfile) && !process.argv.includes('--profile')),
@@ -62,6 +65,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   fs.mkdirSync(reviewProject);
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
+  if (hudReview) fs.copyFileSync(path.join(project,'engine/experiments/hud_retained.gd'),path.join(reviewProject,'_hud_retained.gd'));
   if (operatorSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/operator_surface.gdshader'),path.join(reviewProject,'_operator_surface.gdshader'));
     const source=fs.readFileSync(path.join(project,'engine/experiments/operator_surface.gd'),'utf8');
@@ -139,13 +143,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (gpuTiming) fs.copyFileSync(path.join(__dirname,'gpu_profile.gd'),path.join(reviewProject,'_gpu_profile.gd'));
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
-  let reviewScript = fs.readFileSync(path.join(__dirname,engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
+  let reviewScript = fs.readFileSync(path.join(__dirname,engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : hudReview ? 'hud_review.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
     .replaceAll('gpu_probe.collect(self)','gpu_probe.collect(get_tree())')
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
+  if (hudReview) reviewScript=reviewScript.replace('res://engine/experiments/hud_retained.gd','res://_hud_retained.gd');
   if (gameplayProfile) reviewScript=reviewScript
     .replace('res://tests/cpu_profile.gd','res://_cpu_profile.gd')
     .replace('const LABELS: Array[String] = []',`const LABELS: Array[String] = ${JSON.stringify(instrumentation.labels)}`);
@@ -219,7 +224,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
     if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
-    if (windowsRenderOnly) {
+    if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
+    if (windowsRenderOnly || hudReview) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -287,7 +293,39 @@ const { launchBrowser } = require('../../scripts/browser-options');
       : presentationAbba ? ['native-before','cache-before','cache-after','native-after']
       : navigationAbba ? ['reference-before','lookup-before','lookup-after','reference-after']
       : ['control-before','profile-before','profile-after','control-after'];
-    assert.deepEqual(captures.map(c => c.name),engineLifecycle ? ['depth-only','depth-and-color','resized','msaa-2x','msaa-4x','restored'] : gameplayProfile ? expectedGameplay : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    const expectedHud=['buy','live','damage','spectator','scoreboard','pause','resized'].flatMap(name=>[`${name}-reference`,`${name}-retained`]);
+    assert.deepEqual(captures.map(c => c.name),engineLifecycle ? ['depth-only','depth-and-color','resized','msaa-2x','msaa-4x','restored'] : gameplayProfile ? expectedGameplay : hudReview ? expectedHud : wallReview ? expectedWalls : benchmark ? expected : ['house','spawn','a-exit','mid-doors','long-doors']);
+    if (hudReview) {
+      const {PNG}=require('playwright-core/lib/utilsBundle.js');
+      // Preserve all evidence even when the candidate's first comparison fails.
+      for (const capture of captures) fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+      fs.writeFileSync(path.join(artifacts,'hud-comparison.json'),JSON.stringify(captures.map(({png,...data})=>data),null,2)+'\n');
+      for (let i=0;i<captures.length;i+=2) {
+        const reference=captures[i],retained=captures[i+1];
+        for (const field of ['quality','ssao','scale_3d','viewport','viewport_pixels','logical_size','render_3d'])
+          assert.deepEqual(retained.render[field],reference.render[field],`Same ${field}`);
+        assert.equal(retained.render.quality,'High');
+        assert.equal(retained.render.scale_3d,1);
+        assert.equal(retained.render.ssao,true);
+        assert.equal(reference.frames,24);
+        assert.equal(retained.frames,24);
+        const a=PNG.sync.read(Buffer.from(reference.png,'base64')),b=PNG.sync.read(Buffer.from(retained.png,'base64'));
+        assert.deepEqual([a.width,a.height],[b.width,b.height]);
+        let changed=0,maximum=0;
+        for (let offset=0;offset<a.data.length;offset++) {
+          const delta=Math.abs(a.data[offset]-b.data[offset]);
+          if (delta) changed++;
+          maximum=Math.max(maximum,delta);
+        }
+        assert.equal(changed,0,`${retained.name}: pixel-exact HUD compositing (${changed} channels differ, maximum ${maximum})`);
+        for (const operation of ['createBuffer','deleteBuffer','bufferData'])
+          assert.ok(reference.buffers[operation]-retained.buffers[operation]>=12*reference.frames,
+            `${retained.name}: eliminates at least twelve static buffer ${operation} calls per frame`);
+        for (const operation of ['createVertexArray','deleteVertexArray'])
+          assert.ok(reference.buffers[operation]-retained.buffers[operation]>=6*reference.frames,
+            `${retained.name}: eliminates at least six static VAO ${operation} calls per frame`);
+      }
+    }
     if (engineLifecycle) {
       const summary=await page.evaluate(() => window.engineLifecycleSummary);
       assert.equal(summary.stages,6);
@@ -402,8 +440,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
       operator_surface:operatorSurface,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
-    assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
-    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
+    assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
+    console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : hudReview ? 'seven pixel-exact HUD comparisons with measured WebGL allocation reduction.' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);
   } finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(artifacts,'console.log'),logs.join('\n')+'\n');
