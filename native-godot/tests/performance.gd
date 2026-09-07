@@ -120,6 +120,26 @@ func check_camera_feedback(game: Node3D) -> void:
 	game.player.health = health
 	game.player.camera.make_current()
 
+func check_operator_feedback(game: Node3D) -> void:
+	check(game.operator_details() == {"alive": 9, "dead": 0, "sleeping": 0}, "Fresh round reports nine live operators")
+	var first: Node3D = game.bots[0]
+	var second: Node3D = game.bots[1]
+	first.health = 0
+	second.health = 0
+	second.rig.corpse_sleeping = true
+	second.rig.corpse_time = 1.25
+	var pose: Transform3D = second.model.transform
+	var details: Dictionary = JSON.parse_string(game.details())
+	check(details.operators.alive == 7 and details.operators.dead == 2 and details.operators.sleeping == 1, "Feedback distinguishes falling and sleeping corpses")
+	check(second.rig.corpse_sleeping and second.rig.corpse_time == 1.25 and second.model.transform == pose, "Reading counts never wakes, ages or animates a body")
+	first.health = 100
+	second.health = 100
+	check(game.operator_details() == {"alive": 9, "dead": 0, "sleeping": 0}, "Restored health is live even before next animation wake")
+	second.rig.corpse_sleeping = false
+	second.rig.corpse_time = 0
+	game.new_round()
+	check(game.operator_details() == {"alive": 9, "dead": 0, "sleeping": 0}, "Rebuilt round does not inherit corpse counters")
+
 func run() -> void:
 	check_render_dimensions()
 	var metrics := Metrics.new()
@@ -147,6 +167,8 @@ func run() -> void:
 	current_scene = game
 	for i in 3: await process_frame
 	check_camera_feedback(game)
+	check_operator_feedback(game)
+	for i in 3: await process_frame
 	check(game.render_budget.level == 2,"High is the default on every platform")
 	check(game.get_viewport().scaling_3d_scale == 1.0,"Default does not reduce rendering resolution")
 	check(game.world.find_children("*","WorldEnvironment",true,false)[0].environment.ssao_enabled,"Default retains ambient occlusion")

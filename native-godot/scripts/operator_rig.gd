@@ -4,6 +4,7 @@ extends RefCounted
 const FootPlacement = preload("res://scripts/foot_placement.gd")
 const Layout = preload("res://scripts/layout.gd")
 const WeaponClearance = preload("res://scripts/weapon_clearance.gd")
+const CORPSE_SETTLE_SECONDS := 1.0
 
 class Limb:
 	var upper: int
@@ -42,6 +43,10 @@ var arms: Array[Limb] = []
 var legs: Array[Limb] = []
 var weapon_rest_inverse: Transform3D
 var weapon_clearance := WeaponClearance.new()
+var corpse_sleeping := false
+var corpse_time := 0.0
+var corpse_body := Transform3D.IDENTITY
+var corpse_model := Transform3D.IDENTITY
 
 func setup(root: Node3D) -> void:
 	model = root
@@ -87,6 +92,8 @@ func cache_limb(upper: int, lower: int, end: int) -> Limb:
 	return limb
 
 func on_shot() -> void:
+	corpse_sleeping = false
+	corpse_time = 0.0
 	recoil = 1
 	flash_left = 0.045
 
@@ -132,6 +139,15 @@ func flush() -> void:
 
 func animate(dt: float, actor: Node3D) -> void:
 	if actor.game.paused: return
+	var dead: bool = actor.health <= 0
+	var body := actor.global_transform
+	# Corpses no longer need breathing/IK or repeated static-map weapon queries
+	# once the fall and clearance have settled. Keep _process enabled so moving
+	# the actor/model or changing health wakes it on the next unpaused frame.
+	if not dead or body != corpse_body or model.transform != corpse_model or not weapon_clearance.clear:
+		corpse_sleeping = false
+		corpse_time = 0.0
+	if corpse_sleeping: return
 	var inverse_basis: Basis = actor.global_basis.inverse()
 	var relative: Vector3 = inverse_basis * (actor.look_goal - actor.eye())
 	var look := Vector2(atan2(relative.y, Vector2(relative.x, relative.z).length()), atan2(-relative.x, -relative.z))
@@ -140,11 +156,21 @@ func animate(dt: float, actor: Node3D) -> void:
 	last_yaw = actor.rotation.y
 	var working: bool = actor.role == "DEFUSE" and actor.game.defuser == actor
 	if actor.game.objective.carrier == actor and actor.game.objective.plant_progress > 0: working = true
-	update_pose(dt, moving, look, actor.reload_left, working, actor.health <= 0, yaw_rate,
-		actor.global_transform, Layout.floor_height, actor.get_world_3d().direct_space_state)
+	update_pose(dt, moving, look, actor.reload_left, working, dead, yaw_rate,
+		body, Layout.floor_height, actor.get_world_3d().direct_space_state)
+	if dead:
+		corpse_body = body
+		corpse_model = model.transform
+		corpse_time += maxf(dt, 0)
+		corpse_sleeping = corpse_time >= CORPSE_SETTLE_SECONDS and fall == 1 \
+			and weapon_clearance.clear and flash_left == 0 and not flash.visible
 
 func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float, working: bool, dead: bool, yaw_rate: float = 0,
 		body := Transform3D.IDENTITY, height := Callable(), space: PhysicsDirectSpaceState3D = null) -> void:
+	# Explicit pose fixtures/callers remain unconditional and invalidate sleep.
+	if corpse_sleeping:
+		corpse_sleeping = false
+		corpse_time = 0.0
 	clock += dt
 	var blend := 1 - exp(-dt * 12)
 	motion = motion.lerp(Vector3(velocity.x, 0, velocity.z), blend)

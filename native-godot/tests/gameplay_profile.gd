@@ -117,7 +117,7 @@ func run_segment(name: String, recording: bool, reference_navigation: bool = fal
 		"p99_ms": ordered[ceili(ordered.size() * 0.99) - 1],
 		"mean_draw_calls": draws / maxi(1, Probe.frame_count), "mean_primitives": primitives / maxi(1, Probe.frame_count),
 		"bot_shots": shots, "bot_travel_m": travel, "ending_round": game.round_number, "ending_phase": game.phase,
-		"ending_health": game.player.health, "render": game.render_budget.details(game.get_viewport()),
+		"ending_health": game.player.health, "operators": game.operator_details(), "render": game.render_budget.details(game.get_viewport()),
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"backend": JavaScriptBridge.eval("window.renderBackend", true)})
 	if "--presentation-abba" in OS.get_cmdline_user_args():

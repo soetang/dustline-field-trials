@@ -13,7 +13,7 @@ const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
 const FrameMetrics = preload("res://scripts/frame_metrics.gd")
 const RenderBudget = preload("res://scripts/render_budget.gd")
-const BUILD := "courtyard-0.4.10-impact-reuse"
+const BUILD := "courtyard-0.4.11-corpse-sleep"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld
@@ -402,8 +402,19 @@ func camera_details() -> Dictionary:
 		"fov_degrees": camera.fov, "near": camera.near, "far": camera.far,
 		"keep_aspect": camera.keep_aspect}
 
+func operator_details() -> Dictionary:
+	# Snapshot only: no per-frame scan, pose update or renderer readback.
+	var counts := {"alive": 0, "dead": 0, "sleeping": 0}
+	for bot in bots:
+		if not is_instance_valid(bot): continue
+		if bot.health > 0: counts.alive += 1
+		else:
+			counts.dead += 1
+			if bot.rig.corpse_sleeping: counts.sleeping += 1
+	return counts
+
 func details() -> String:
-	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "recent_live_frames": frame_metrics.cached, "render": render_budget.details(get_viewport()), "scene_nodes": get_tree().get_node_count(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "camera": camera_details(), "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "weapon_wall": {"withdrawal": player.weapon_clearance.amount, "clear": player.weapon_clearance.clear, "queries": player.weapon_clearance.queries}, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
+	return JSON.stringify({"build": BUILD, "seed": match_seed, "engine": Engine.get_version_info().string, "os": OS.get_name(), "renderer": RenderingServer.get_current_rendering_method(), "gpu": RenderingServer.get_video_adapter_name(), "fps": Engine.get_frames_per_second(), "recent_live_frames": frame_metrics.cached, "render": render_budget.details(get_viewport()), "scene_nodes": get_tree().get_node_count(), "operators": operator_details(), "round": round_number, "phase": phase, "phase_left": phase_left, "paused": paused, "buy_open": buy_open, "elapsed": elapsed, "position": str(player.position), "position_xyz": [player.position.x, player.position.y, player.position.z], "yaw": player.rotation.y, "pitch": player.pitch, "camera": camera_details(), "ammo": player.ammo, "reload_left": player.reload_left, "location": Layout.callout(player.position), "view_location": Layout.callout(view_position()), "spectating": actor_name(spectator.target) if spectator.active else "", "last_death": combat.death_report, "weapon": Weapons.SPECS[player.slot].name, "weapon_wall": {"withdrawal": player.weapon_clearance.amount, "clear": player.weapon_clearance.clear, "queries": player.weapon_clearance.queries}, "health": player.health, "shots": player.shot_count, "hits": hits, "muted": sound.muted}, "  ")
 
 func screenshot() -> void:
 	if DisplayServer.get_name() == "headless": return
