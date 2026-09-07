@@ -15,7 +15,9 @@ function check(label, fn) {
   try { fn(); checks++; }
   catch (error) { console.error(`FAIL: ${label}`); throw error; }
 }
-check('pinned Playwright exports the actual HUD screenshot decoder', () => {
+// Pure headless checks do not install browser dependencies. The visual workflow
+// opts into this preflight after npm ci, before starting any rendered fixture.
+if (process.argv.includes('--with-png')) check('pinned Playwright exports the actual HUD screenshot decoder', () => {
   const {PNG}=require('playwright-core/lib/utilsBundle');
   const source=new PNG({width:1,height:1});
   source.data.fill(128);

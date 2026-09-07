@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      - run: node native-godot/tests/hud-buffer-probe-check.js --with-png
       - uses: actions/cache@v4
         with:
           path: .tools/godot/4.7.2
