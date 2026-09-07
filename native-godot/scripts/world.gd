@@ -2,6 +2,7 @@ class_name FieldWorld
 extends Node3D
 
 const Layout = preload("res://scripts/layout.gd")
+const Crate = preload("res://scripts/crate_mesh.gd")
 const BATCH_CELL_SIZE := 8.0
 # Experimental until repeated same-quality timings show a net benefit.
 const CONSOLIDATE_STANDARD_COLORS := false
@@ -316,13 +317,10 @@ func crate(rect: Rect2, index: int) -> void:
 	var center := rect.get_center()
 	var height := 1.1 if index % 3 == 0 else 2.0
 	var base := Layout.floor_height(center)
-	var timber := material(Color("806e50") if index % 2 == 0 else Color("6d745d"))
-	var band := material(Color("464d45"), 0.35)
-	box(Vector3(center.x, base + height * 0.5, center.y), Vector3(rect.size.x, height, rect.size.y), timber, true)
-	for side in [-1, 1]:
-		for offset in [-0.32, 0.32]:
-			box(Vector3(center.x + rect.size.x * offset, base + height * 0.5, center.y + side * (rect.size.y * 0.5 + 0.018)), Vector3(0.09, height + 0.02, 0.04), band)
-			box(Vector3(center.x + side * (rect.size.x * 0.5 + 0.018), base + height * 0.5, center.y + rect.size.y * offset), Vector3(0.04, height + 0.02, 0.09), band)
+	var tint := Color("806e50") if index % 2 == 0 else Color("6d745d")
+	var size := Vector3(rect.size.x, height, rect.size.y)
+	var body := box(Vector3(center.x, base + height * 0.5, center.y), size, material(tint), true)
+	Crate.replace_visual(body, size, tint, 7000 + index)
 
 func arch(at: Vector3, yaw: float, width: float = 8.0) -> void:
 	var parent := Node3D.new()

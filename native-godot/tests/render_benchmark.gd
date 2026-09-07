@@ -25,6 +25,7 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 	camera.position = at
 	camera.look_at(target)
 	frame = 0
+	print("RENDER_WARMUP ", name, " frames=", warmup)
 	for i in warmup:
 		animate()
 		await RenderingServer.frame_post_draw
@@ -39,6 +40,7 @@ func capture(name: String, at: Vector3, target: Vector3) -> void:
 	var setup_cpu := 0.0
 	var render_cpu := 0.0
 	var render_gpu := 0.0
+	print("RENDER_MEASURE ", name, " frames=", samples)
 	var previous := Time.get_ticks_usec()
 	for i in samples:
 		animate()

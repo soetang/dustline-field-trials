@@ -114,14 +114,15 @@ func run() -> void:
 	await process_frame
 	var original := World.new()
 	root.add_child(original)
-	check(original.batching.batches == 298 and original.batching.color_batches == 0,"Unproven batching changes are not enabled by default")
+	check(original.batching.batches == 265 and original.batching.color_batches == 0,"Crate integration retains original cell size and disables experimental color consolidation")
+	check(original.find_children("SupplyCrateDetail", "MeshInstance3D", true, false).size() == 16,"All sixteen detailed crates survive scenery batching")
 	original.queue_free()
 	await process_frame
 	var world := OptimizedWorld.new()
 	root.add_child(world)
-	check(world.batching.source_boxes == 1376,"Full scenery preserves all source box instances")
+	check(world.batching.source_boxes == 1248,"Scenery retains source boxes except 128 bands replaced by detailed crate surfaces")
 	check(world.batching.bodies_before == 53 and world.batching.bodies_after == 53,"Full scenery preserves all 53 static collision bodies")
-	check(world.batching.batches < 298,"Color consolidation reduces the original spatial/material batches")
+	check(world.batching.batches < 265,"Color consolidation reduces current spatial/material batches")
 	print("MATERIAL_BATCH_SAMPLE ",JSON.stringify(world.batching))
 	print("MATERIAL_BATCHES: %d/%d passed" % [passed,passed+failed])
 	world.queue_free()

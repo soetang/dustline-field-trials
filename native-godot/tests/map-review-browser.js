@@ -23,8 +23,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const presentationAbba = process.argv.includes('--presentation-abba');
   const presentationCache = process.argv.includes('--presentation-cache');
   const gpuTiming = process.argv.includes('--gpu-timing');
-  const crateDetail = process.argv.includes('--crate-detail');
-  assert.ok(!crateDetail || (!wallReview && !gameplayProfile && !engineLifecycle),'Crate prototype is only available in map/render fixtures');
+  const simpleCrates = process.argv.includes('--simple-crates');
+  // --crate-detail remains a harmless alias for the now-standard visuals.
+  assert.ok(!simpleCrates || (!wallReview && !gameplayProfile && !engineLifecycle && !process.argv.includes('--crate-detail')),
+    'Simple-crate comparison is only available in map/render fixtures');
   assert.ok(!navigationAbba || gameplayProfile,'Navigation ABBA requires --gameplay-profile');
   assert.ok(!presentationAbba || (gameplayProfile && !navigationAbba),'Presentation ABBA requires --gameplay-profile without --navigation-abba');
   assert.ok(!presentationCache || ((benchmark || engineLifecycle) && !presentationAbba),'Fixed presentation cache is only available in render/engine fixtures');
@@ -73,24 +75,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
   }
   const batchCell = process.argv.find(arg=>arg.startsWith('--batch-cell='))?.split('=')[1];
-  if (crateDetail) {
-    fs.copyFileSync(path.join(project,'engine/experiments/crate.gdshader'),path.join(reviewProject,'_crate.gdshader'));
-    const crateSource=fs.readFileSync(path.join(project,'engine/experiments/crate_mesh.gd'),'utf8')
-      .replace('res://engine/experiments/crate.gdshader','res://_crate.gdshader');
-    fs.writeFileSync(path.join(reviewProject,'_crate_mesh.gd'),crateSource);
+  if (simpleCrates) {
     const file=path.join(reviewProject,'scripts/world.gd');
     const source=fs.readFileSync(file,'utf8');
     const start=source.indexOf('func crate(rect: Rect2, index: int) -> void:');
     const end=source.indexOf('\nfunc arch(',start);
-    assert.ok(start>=0 && end>start,'Prototype replaces only the crate visual constructor');
+    assert.ok(start>=0 && end>start,'Comparison replaces only the crate visual constructor');
     const replacement=`func crate(rect: Rect2, index: int) -> void:
 \tvar center := rect.get_center()
 \tvar height := 1.1 if index % 3 == 0 else 2.0
 \tvar base := Layout.floor_height(center)
-\tvar tint := Color("806e50") if index % 2 == 0 else Color("6d745d")
-\tvar size := Vector3(rect.size.x, height, rect.size.y)
-\tvar body := box(Vector3(center.x, base + height * 0.5, center.y), size, material(tint), true)
-\tpreload("res://_crate_mesh.gd").replace_visual(body, size, tint, 7000 + index)
+\tvar timber := material(Color("806e50") if index % 2 == 0 else Color("6d745d"))
+\tvar band := material(Color("464d45"), 0.35)
+\tbox(Vector3(center.x, base + height * 0.5, center.y), Vector3(rect.size.x, height, rect.size.y), timber, true)
+\tfor side in [-1, 1]:
+\t\tfor offset in [-0.32, 0.32]:
+\t\t\tbox(Vector3(center.x + rect.size.x * offset, base + height * 0.5, center.y + side * (rect.size.y * 0.5 + 0.018)), Vector3(0.09, height + 0.02, 0.04), band)
+\t\t\tbox(Vector3(center.x + side * (rect.size.x * 0.5 + 0.018), base + height * 0.5, center.y + rect.size.y * offset), Vector3(0.04, height + 0.02, 0.09), band)
 `;
     fs.writeFileSync(file,source.slice(0,start)+replacement+source.slice(end));
   }
@@ -349,7 +350,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
       assert.ok(state.hits > 0,'Cached presentation state was used');
       assert.deepEqual(state.validation,{lost:false,scissor:true,draw:true},'Cached state still matches native state');
     }
-    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,crate_prototype:crateDetail,staged:true,args,captures},null,2)+'\n');
+    fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,
+      crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
     console.log('PASS:',engineLifecycle ? 'six isolated native WebGL framebuffer lifecycle stages.' : gameplayProfile ? 'test-only CPU scopes during an automated AI round (not human play).' : wallReview ? 'twelve staged wall/weapon views.' : benchmark ? 'staged render benchmark (not gameplay/hardware FPS).' : 'five staged map views.', 'Artifacts:',artifacts);

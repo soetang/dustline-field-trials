@@ -7,9 +7,9 @@ native-godot/tools/make_operators.py. Procedural skeletal animation is in
 native-godot/scripts/operator_rig.gd. The original browser units and shared
 first-person weapons use scripts/make-operators.py and scripts/make-weapons.py.
 No Valve models, maps, animation clips, motion capture or recordings are used.
-The optional supply-crate prototype in engine/experiments/crate_mesh.gd is
+The supply-crate mesh in scripts/crate_mesh.gd and shaders/crate.gdshader is
 original MIT geometry and vertex-color shading, without downloaded meshes,
-textures, decals or branding. It is excluded from public packs until integrated.
+textures, decals or branding. It is generated once at map startup.
 
 The six 1024x1024 concrete surface JPEGs are Poly Haven CC0-1.0 assets:
 https://polyhaven.com/a/concrete_floor

@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode diffuse_burley;
 
-// Original prototype colors: alpha is a material selector, not transparency.
+// Original supply-crate colors: alpha is a material selector, not transparency.
 // No texture download, noise loop, per-frame geometry or extra material pass.
 varying vec3 pigment;
 void vertex() {

@@ -1,6 +1,6 @@
 extends SceneTree
 
-const Crate = preload("res://engine/experiments/crate_mesh.gd")
+const Crate = preload("res://scripts/crate_mesh.gd")
 const Layout = preload("res://scripts/layout.gd")
 var passed := 0
 var failed := 0

@@ -2,7 +2,7 @@ extends RefCounted
 
 ## Original static prop, built once into one indexed surface. Details remain
 ## inside the existing solid cover box; no new navigation/collision geometry.
-const SHADER = preload("res://engine/experiments/crate.gdshader")
+const SHADER = preload("res://shaders/crate.gdshader")
 static var shared_material: ShaderMaterial
 
 static func material() -> ShaderMaterial:

@@ -434,12 +434,13 @@ GPU bottleneck. These roughly 32–35 ms timeline spans exceed a 16.67 ms total
 The first prototype also allocated its query pool in the first sampled frame;
 the helper now moves initial pool allocation before the window's wall timer.
 
-### Supply-crate visual prototype (not enabled in public gameplay)
+### 0.4.6 supply-crate graphics update
 
-`--crate-detail` with a map review or render benchmark substitutes an original
-beveled, planked supply-crate mesh only in the temporary project. It is separate
-from engine baseline/patch comparisons. `scene=crates` in the remote review
-workflow captures the same five map views as `scene=map` with this prototype.
+The original beveled, planked supply-crate prototype is now integrated. It is
+separate from the unshipped engine changes above: 0.4.6 still uses the identical
+official Godot 4.7.2 runtime. `--simple-crates` restores only the old crate visual
+constructor in a temporary map/render fixture for comparisons; it is not a
+public quality toggle. `--crate-detail` remains an alias for the new default.
 
 Each prop has one indexed visible surface with baked wood/metal vertex colors,
 seams, bevels, rivets and small original shipping marks. No new texture downloads,
@@ -451,21 +452,58 @@ intentional geometric shadow proxy, not exact micro-bevel self-shadowing.
 The headless geometry test passes 174 checks across all sixteen cover sizes and
 three small/extreme sizes: bounds, clockwise winding, finite unit normals,
 deterministic output, shared material, one surface, retained collision and fewer
-than 850 triangles per prop. These are geometry checks, **not** a visual approval
-or a measured FPS improvement. The prototype and its shader are excluded from
-public game packs until rendered review and same-engine cost comparisons pass.
+than 850 triangles per prop. Integration checks retain all 53 solid collision
+bodies and all sixteen detail meshes after batching. Replacing the old 128
+separate decorative bands leaves 1,248 box instances in 265 spatial/material
+batches, versus 1,376/298 previously. Experimental color consolidation remains
+off, and all High effects/resolution are unchanged.
+
+Five staged WebGL map views have been inspected. Each production capture is
+byte-identical to the corresponding previously reviewed prototype capture.
+Draw calls for house/spawn/A-exit/mid-doors/long-doors decrease from
+262/817/394/473/755 to 250/759/359/430/692. These counts are visual-fixture
+snapshots, not FPS predictions. The complete headless suite and actual exported
+browser movement/fire/reload/audio/pause/screenshot tests pass.
+
+The packaged release adds 6,895 raw bytes (5,792 bytes using local gzip) relative
+to the local 0.4.5 candidate, including changed scripts and notices. No new
+texture/model downloads are involved. The 65 KB README WebP is documentation
+only and stays outside the game pack. The shader and generated prop code now
+ship; test fixtures, engine experiments and measurements remain excluded.
+
+The first official-engine cost screening showed approximately unchanged mean
+FPS, but included an extra diagnostic readback/native check during the prototype
+run, so it is not a clean performance comparison. An earlier custom-engine run
+ended without timed samples and is unusable. Neither establishes a speedup.
+
+A subsequent clean control-then-detail pair used the same official engine and
+High 1920×882 settings, with 30 warmup and 60 timed frames per view. No other
+agent renderer/compiler, profiler or diagnostic readback ran in those windows.
+
+| Staged view | Old / new mean FPS | Old / new p95 ms | Old / new draw calls |
+|---|---:|---:|---:|
+| CT spawn | 24.87 / 25.57 | 47.5 / 44.3 | 920 / 862 |
+| A site | 39.46 / 39.00 | 29.5 / 28.4 | 417 / 384 |
+| Long doors | 28.60 / 29.49 | 42.7 / 46.0 | 839 / 776 |
+
+This supports the small graphics update without an obvious large rendering-cost
+increase in these views; it is not an alternating-order study or a general FPS
+improvement. Fine geometry adds about 2,000–3,200 rendered primitives in the
+measured views. [Raw frames and runtime details](performance-crates.json) retain
+the short-window limitations and p99 values. No sampling quality was lowered.
 
 ```sh
-node native-godot/tests/map-review-browser.js --crate-detail
-node native-godot/tests/map-review-browser.js --benchmark --crate-detail --capture --samples=90 --warmup=30 --width=1920 --height=882 --windows-render-only
+node native-godot/tests/map-review-browser.js
+node native-godot/tests/map-review-browser.js --benchmark --simple-crates --capture --samples=60 --warmup=30 --width=1920 --height=882 --windows-render-only
+node native-godot/tests/map-review-browser.js --benchmark --capture --samples=60 --warmup=30 --width=1920 --height=882 --windows-render-only
 ```
 
 Use `--compare` for a High/Balanced ABBA comparison; `--batch-cell=8|16|24` changes
 only the temporary benchmark project. Test resources, profiles and documentation
 are excluded from public game packs. No benchmark entry point enters the release.
 
-After the 0.4.5 Pages deployment succeeds, refresh and confirm
-`courtyard-0.4.5-navigation-lookup`, play for 30–60 seconds on High, press Escape,
+After the 0.4.6 Pages deployment succeeds, refresh and confirm
+`courtyard-0.4.6-supply-crates`, play for 30–60 seconds on High, press Escape,
 and copy feedback details. Note the scene and whether slowdowns occur during
 fights or grow over time. A 12-round accelerated lifetime check verifies that
 round resets do not accumulate scene nodes; longer rendered matches still need

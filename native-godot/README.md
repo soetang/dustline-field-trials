@@ -20,7 +20,20 @@ the [original browser game](https://soetang.github.io/dustline-field-trials/)
 continues to support touch controls. Native Forward+ graphics remain available;
 the web build uses Godot's lighter Compatibility renderer.
 
-Version **0.4.5** adds profile-guided navigation acceleration, retaining 0.4.4's
+Version **0.4.6** upgrades the supply crates with beveled planks, recessed straps,
+rivets and original shipping marks. Each crate uses one visible mesh/material,
+with baked colors and a simple shadow proxy; no new textures or per-frame
+geometry work. Cover collision, navigation and High-quality settings are unchanged.
+Short matched-engine render tests showed essentially unchanged average FPS,
+with fewer draw calls; this is a graphics update, not a general performance fix.
+The experimental C++ and presentation-cache changes are **not** included.
+
+![Detailed supply crates at CT spawn, staged WebGL2 visual review](docs/supply-crates.webp)
+
+Actual 0.4.6 browser-renderer capture with actors hidden, encoded as a 65 KB
+WebP for this README. It is not a live gameplay or performance screenshot.
+
+Version **0.4.5** added profile-guided navigation acceleration, retaining 0.4.4's
 weapon clearance. A 31 KB lookup skips repeated geometry calculations only where
 the entire query cell is provably clear or blocked; edges use the original exact
 checks. Profiled path-clearance cost per call fell by roughly 83% on integrated
@@ -121,7 +134,7 @@ development tools only, never published). Builds are separate candidates under
 `builds/web-releases/`; `builds/web-candidate.txt` selects the latest export.
 No desktop executable, desktop release pointer or existing browser game is replaced.
 Serve the candidate directory over HTTP, not `file://`, to play locally.
-The 0.4.1 export is about 45.9 MiB uncompressed, or 17.5 MiB using local gzip;
+The 0.4.6 export is about 45.9 MiB uncompressed, or 17.5 MiB using local gzip;
 actual HTTP transfer depends on the host. Engine and game pack URLs are pinned
 to one immutable release to avoid mixing cached builds.
 
