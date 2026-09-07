@@ -60,6 +60,9 @@ grep -Eq '^WEAPON_WALLS: [0-9]+/[0-9]+ passed' "$log_dir/weapon-walls.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/operators.gd -- --test 2>&1 | tee "$log_dir/operators.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/operators.log"; then exit 1; fi
 grep -Eq '^OPERATORS: [0-9]+/[0-9]+ passed' "$log_dir/operators.log"
+"$godot_bin" --headless --path "$project_dir" --script res://tests/pose_reset.gd -- --test 2>&1 | tee "$log_dir/pose-reset.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/pose-reset.log"; then exit 1; fi
+grep -Eq '^POSE_RESET: [0-9]+/[0-9]+ passed' "$log_dir/pose-reset.log"
 "$godot_bin" --headless --path "$project_dir" --script res://tests/corpse_sleep.gd -- --test 2>&1 | tee "$log_dir/corpse-sleep.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/corpse-sleep.log"; then exit 1; fi
 grep -Eq '^CORPSE_SLEEP: [0-9]+/[0-9]+ passed' "$log_dir/corpse-sleep.log"

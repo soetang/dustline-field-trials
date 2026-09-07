@@ -13,7 +13,7 @@ const Spectator = preload("res://scripts/spectator.gd")
 const Browser = preload("res://scripts/browser.gd")
 const FrameMetrics = preload("res://scripts/frame_metrics.gd")
 const RenderBudget = preload("res://scripts/render_budget.gd")
-const BUILD := "courtyard-0.4.11-corpse-sleep"
+const BUILD := "courtyard-0.4.12-pose-math"
 var match_seed := 512
 var layout := Layout.new()
 var world: FieldWorld

@@ -47,6 +47,7 @@ var corpse_sleeping := false
 var corpse_time := 0.0
 var corpse_body := Transform3D.IDENTITY
 var corpse_model := Transform3D.IDENTITY
+var root_pose_only := false
 
 func setup(root: Node3D) -> void:
 	model = root
@@ -77,6 +78,26 @@ func setup(root: Node3D) -> void:
 	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	flash.visible = false
 	model.add_child(flash)
+	root_pose_only = can_reset_root_only()
+
+func can_reset_root_only() -> bool:
+	# update_pose writes every listed descendant before reading it. Unknown
+	# accessories or parent relationships still use the full inherited pose.
+	var expected := {"pelvis":"", "spine":"pelvis", "chest":"spine", "neck":"chest", "head":"neck", "weapon":"chest"}
+	for side in ["l", "r"]:
+		expected["upperarm_"+side] = "chest"
+		expected["forearm_"+side] = "upperarm_"+side
+		expected["hand_"+side] = "forearm_"+side
+		expected["thigh_"+side] = "pelvis"
+		expected["shin_"+side] = "thigh_"+side
+		expected["foot_"+side] = "shin_"+side
+	if ids.size() != expected.size() or parents.size() != expected.size(): return false
+	for name: String in expected:
+		if not ids.has(name): return false
+		var parent_name: String = expected[name]
+		if not parent_name.is_empty() and not ids.has(parent_name): return false
+		if parents[ids[name]] != (-1 if parent_name.is_empty() else ids[parent_name]): return false
+	return true
 
 func cache_limb(upper: int, lower: int, end: int) -> Limb:
 	var limb := Limb.new()
@@ -122,7 +143,8 @@ func solve_limb(limb: Limb, goal: Transform3D, pole: Vector3) -> void:
 	var a := limb.upper
 	var b := limb.lower
 	var c := limb.end
-	var start := (pose[parents[a]] * local_rest[a]).origin
+	# Only the joint position is used; do not multiply and discard two bases.
+	var start := pose[parents[a]] * local_rest[a].origin
 	var first := limb.first
 	var second := limb.second
 	var target := start + (goal.origin - start).limit_length(first + second - 0.001)
@@ -208,7 +230,8 @@ func update_pose(dt: float, velocity: Vector3, look: Vector2, reload_left: float
 		foot_targets.append(foot)
 	if height.is_valid() and not dead:
 		foot_targets = grounding.update(dt, body, foot_targets, foot_rests, phase, speed, height)
-	inherit_pose()
+	if root_pose_only: pose[ids.pelvis] = local_rest[ids.pelvis]
+	else: inherit_pose()
 	var pelvis: int = ids.pelvis
 	pose[pelvis].origin.y -= 0.025 + amount * (0.10 + absf(sin(phase * TAU * 2)) * 0.018)
 	# Let the lower foot reach downhill ground without stretching the leg.
