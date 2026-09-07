@@ -44,6 +44,9 @@ node "$project_dir/tests/hud-buffer-probe-check.js" 2>&1 | tee "$log_dir/hud-buf
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/hud_retention.gd -- --test 2>&1 | tee "$log_dir/hud-retention.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/hud-retention.log"; then exit 1; fi
 grep -Eq '^HUD_RETENTION: [0-9]+/[0-9]+ passed' "$log_dir/hud-retention.log"
+"$godot_bin" --headless --path "$project_dir" --script res://tests/flat_surface.gd 2>&1 | tee "$log_dir/flat-surface.log"
+if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/flat-surface.log"; then exit 1; fi
+grep -Eq '^FLAT_SURFACE: [0-9]+/[0-9]+ passed' "$log_dir/flat-surface.log"
 "$godot_bin" --headless --path "$project_dir" --fixed-fps 60 --script res://tests/wall_collision.gd -- --test 2>&1 | tee "$log_dir/wall-collision.log"
 if grep -Eq 'SCRIPT ERROR:|^ERROR:|^FAIL:' "$log_dir/wall-collision.log"; then exit 1; fi
 grep -Eq '^WALL_COLLISION: [0-9]+/[0-9]+ passed' "$log_dir/wall-collision.log"

@@ -48,6 +48,60 @@ func indices_at(data: Dictionary, distance: float, model_scale := 1.0, screen_th
 		result.append(bytes.decode_u16(i) if stride == 2 else bytes.decode_u32(i))
 	return result
 
+func posed_bounds(surfaces: Array[Dictionary], transforms: Array[Transform3D]) -> AABB:
+	# Pinned GLES3 MeshStorage::mesh_get_aabb transforms each surface's bone
+	# boxes BEFORE unioning them. These assets have identity mesh->skeleton.
+	var result := AABB()
+	var first := true
+	for surface in surfaces:
+		var local := AABB()
+		var local_first := true
+		for bind in surface.bone_aabbs.size():
+			var bounds: AABB = surface.bone_aabbs[bind]
+			if bounds.size == Vector3(-1, -1, -1): continue
+			var posed: AABB = transforms[bind] * bounds
+			local = posed if local_first else local.merge(posed)
+			local_first = false
+		result = local if first else result.merge(local)
+		first = false
+	return result
+
+func inspect_animated_bounds(team: String, source: ArrayMesh, result: ArrayMesh, rig: FieldOperatorRig) -> void:
+	var originals := snapshot(source)
+	var merged := snapshot(result)
+	var node: MeshInstance3D = rig.model.find_children("*", "MeshInstance3D", true, false)[0]
+	check((rig.skeleton.global_transform.affine_inverse() * node.global_transform).is_equal_approx(Transform3D.IDENTITY), team + " bounds fixture uses identity mesh-to-skeleton transform")
+	var conservative := true
+	var different := 0
+	var max_delta := 0.0
+	const EPSILON := 0.000002 # Allow float32 AABB merge/transform roundoff only.
+	for mode in 4:
+		for frame in 120:
+			rig.update_pose(1.0 / 60, Vector3(0, 0, -2.1) if mode == 1 else Vector3.ZERO,
+				Vector2(0.4, 0.5) if mode == 2 else Vector2(-0.3, -0.5) if mode == 3 else Vector2.ZERO,
+				1.1 if mode == 3 else 0.0, false, false)
+			var transforms: Array[Transform3D] = []
+			for bind in node.skin.get_bind_count():
+				var bone := node.skin.get_bind_bone(bind)
+				if not node.skin.get_bind_name(bind).is_empty(): bone = rig.skeleton.find_bone(node.skin.get_bind_name(bind))
+				transforms.append(rig.skeleton.get_bone_global_pose(bone) * node.skin.get_bind_pose(bind))
+			var a := posed_bounds(originals, transforms)
+			var b := posed_bounds(merged, transforms)
+			var delta := 0.0
+			for axis in 3:
+				conservative = conservative and b.position[axis] <= a.position[axis] + EPSILON and b.end[axis] >= a.end[axis] - EPSILON
+				delta = maxf(delta, maxf(absf(a.position[axis] - b.position[axis]), absf(a.end[axis] - b.end[axis])))
+			if delta > EPSILON: different += 1
+			max_delta = maxf(max_delta, delta)
+	check(conservative, team + " merged animated bounds conservatively contain original bounds")
+	# This is deliberately evidence of an unresolved promotion gap, not an
+	# equality assertion: CT material boxes are not nested, so union-before-
+	# rotation can enlarge bounds and therefore alter the renderer's LOD distance.
+	if team == "ct": check(max_delta > 0.001, "CT actual aim poses expose nonidentical animated bounds")
+	print("OPERATOR_SURFACE_BOUNDS ", team, " sampled_frames=480 differing_frames=", different,
+		" max_bound_delta_m=", max_delta, " conservative=", conservative,
+		" (fixed-distance LOD equality does not prove animated-bounds/LOD equivalence)")
+
 func inspect_geometry(team: String, source: ArrayMesh, result: ArrayMesh, materials: Array[Material]) -> void:
 	check(result.get_surface_count() == 1, team + " one surface")
 	var merged := result.surface_get_arrays(0)
@@ -91,7 +145,9 @@ func inspect_geometry(team: String, source: ArrayMesh, result: ArrayMesh, materi
 	check(exact_bone_bounds, team + " retains union of original per-bone culling bounds")
 	check(data.get("lods", []).size() == edges.size(), team + " retains all independent LOD thresholds")
 	# Select the same exact index stream below, on and above every original
-	# threshold, with multiple camera/model scales and pixel thresholds.
+	# threshold, with multiple camera/model scales and pixel thresholds. These
+	# shared input distances do NOT prove the animated AABBs produce identical
+	# distances; inspect_animated_bounds records that separate promotion gap.
 	var matching_lods := true
 	var samples := 0
 	for scale: float in [0.5, 1.0, 2.0]:
@@ -208,6 +264,7 @@ func run() -> void:
 		var old_pose := baseline_rig.pose.duplicate()
 		check(Merge.apply(baseline) and baseline_rig.flash == flash and baseline_rig.pose == old_pose,
 			team + " late fixture opt-in preserves existing rig pose and muzzle flash")
+		inspect_animated_bounds(team, source, result, baseline_rig)
 		baseline.free()
 		candidate.free()
 	print("OPERATOR_SURFACE: %d/%d passed" % [passed, passed + failed])

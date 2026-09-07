@@ -4,6 +4,8 @@ extends RefCounted
 ## is retained, so a test fixture can opt in after the operator is instantiated.
 ## Never mutates the imported mesh/materials, skin, skeleton or node transform.
 ## Only immutable load-time geometry is supported; source.changed drops cache.
+## Promotion gap: unioned bone bounds can expand differently during animation,
+## changing the renderer's LOD distance. See the actual-pose bounds regression.
 const SHADER = preload("res://engine/experiments/operator_surface.gdshader")
 # Godot 4.7.2's ARRAY_FLAG_FORMAT_VERSION_2 in rendering_server_enums.h.
 const PACKED_FORMAT_VERSION := 1 << 35
@@ -161,7 +163,8 @@ static func merge(source: ArrayMesh, materials: Array[Material]) -> ArrayMesh:
 
 	# GLES3 uses one instance distance/model scale for all surfaces. At every
 	# union threshold retain each source's latest eligible LOD (or base indices).
-	# Thus distant silhouettes stay unchanged; no LOD is discarded/regenerated.
+	# No LOD is discarded/regenerated. Selection matches at an EQUAL input
+	# distance/scale; this alone does not prove animated-bound distances match.
 	edges.sort()
 	var merged_lods: Dictionary = {}
 	for edge in edges:

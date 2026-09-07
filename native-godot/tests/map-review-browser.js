@@ -26,6 +26,10 @@ const { launchBrowser } = require('../../scripts/browser-options');
   const gpuTiming = process.argv.includes('--gpu-timing');
   const ssaoUnroll = process.argv.includes('--ssao-unroll');
   const operatorSurface = process.argv.includes('--operator-surface');
+  const flatSurface = process.argv.includes('--flat-surface');
+  assert.ok(!flatSurface || (!hudReview && !wallReview && !gameplayProfile && !engineLifecycle && !operatorSurface && !ssaoUnroll && !presentationCache && !gpuTiming &&
+    !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=)/.test(arg))),
+    'Flat-face shader review requires an isolated official-engine High map or render fixture');
   assert.ok(!hudReview || !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=|profile)/.test(arg)),
     'HUD review preserves the official engine and unchanged High graphics');
   assert.ok(!operatorSurface || ((benchmark || wallReview) && !presentationCache && !gpuTiming && !ssaoUnroll &&
@@ -66,6 +70,13 @@ const { launchBrowser } = require('../../scripts/browser-options');
   for (const name of ['project.godot','export_presets.cfg','main.tscn','scripts','assets','shaders','web','.godot'])
     fs.cpSync(path.join(project,name),path.join(reviewProject,name),{recursive:true,filter:file=>!file.includes('/shader_cache')});
   if (hudReview) fs.copyFileSync(path.join(project,'tests/fixtures/hud_reference.gd'),path.join(reviewProject,'_hud_reference.gd'));
+  if (flatSurface) {
+    fs.copyFileSync(path.join(project,'engine/experiments/flat_surface.gdshader'),path.join(reviewProject,'_flat_surface.gdshader'));
+    const source=fs.readFileSync(path.join(project,'engine/experiments/flat_surface.gd'),'utf8');
+    const original='res://engine/experiments/flat_surface.gdshader';
+    assert.equal(source.split(original).length,2);
+    fs.writeFileSync(path.join(reviewProject,'_flat_surface.gd'),source.replace(original,'res://_flat_surface.gdshader'));
+  }
   if (operatorSurface) {
     fs.copyFileSync(path.join(project,'engine/experiments/operator_surface.gdshader'),path.join(reviewProject,'_operator_surface.gdshader'));
     const source=fs.readFileSync(path.join(project,'engine/experiments/operator_surface.gd'),'utf8');
@@ -151,6 +162,16 @@ const { launchBrowser } = require('../../scripts/browser-options');
     .replaceAll('root.','get_tree().root.').replaceAll('current_scene = game','get_tree().current_scene = game')
     .replaceAll('quit(','get_tree().quit(');
   if (hudReview) reviewScript=reviewScript.replace('res://tests/fixtures/hud_reference.gd','res://_hud_reference.gd');
+  if (flatSurface) {
+    const anchor='\tget_tree().current_scene = game\n';
+    assert.equal(reviewScript.split(anchor).length,2,'One fully constructed and batched review world');
+    reviewScript=reviewScript.replace('extends Node\n','extends Node\n\nvar flat_surface_probe\n');
+    reviewScript=reviewScript.replace(anchor,anchor+
+      '\tflat_surface_probe = preload("res://_flat_surface.gd").new()\n'+
+      '\tvar flat_surface_result: Dictionary = flat_surface_probe.apply(game.world)\n'+
+      '\tJavaScriptBridge.eval("window.flatSurfaceResult=" + JSON.stringify(flat_surface_result),true)\n'+
+      '\tprint("FLAT_SURFACE_READY ",JSON.stringify(flat_surface_result))\n');
+  }
   if (gameplayProfile) reviewScript=reviewScript
     .replace('res://tests/cpu_profile.gd','res://_cpu_profile.gd')
     .replace('const LABELS: Array[String] = []',`const LABELS: Array[String] = ${JSON.stringify(instrumentation.labels)}`);
@@ -282,6 +303,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
     }
     assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review stays alive until the page is closed');
     const captures = await page.evaluate(() => window.mapReviewCaptures);
+    const flatSurfaceState=flatSurface ? await page.evaluate(() => window.flatSurfaceResult) : null;
+    if (flatSurface) {
+      assert.equal(flatSurfaceState.error,'');
+      assert.ok(flatSurfaceState.changed>0 && flatSurfaceState.multimeshes>0,'Real WebGL wall batches are eligible');
+      assert.ok(flatSurfaceState.materials>0 && flatSurfaceState.materials<flatSurfaceState.changed,'Clones shared per original material');
+      assert.ok(flatSurfaceState.instances>flatSurfaceState.changed,'Actual MultiMesh instance transforms were inspected');
+      assert.ok(logs.some(line=>line.includes('FLAT_SURFACE_READY ')));
+    }
     if (operatorSurface) assert.equal(logs.filter(line=>line.includes('OPERATOR_SURFACE_READY ')).length,9,
       'All nine real operator models use the merged fixture, without silent fallback');
     const poses = ['spawn','a-site','long-doors'];
@@ -445,7 +474,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
       }
     }
     fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify({candidate,engine,presentation_cache:presentationState,ssao_unroll:ssaoState,
-      operator_surface:operatorSurface,
+      operator_surface:operatorSurface,flat_surface:flatSurfaceState,
       crate_visuals:engineLifecycle ? null : simpleCrates ? '0.4.5 simple boxes and bands' : '0.4.6 detailed single-surface crates',staged:true,args,captures},null,2)+'\n');
     assert.deepEqual(failures,[]);
     assert.ok(logs.some(line => line.includes(engineLifecycle ? 'ENGINE_LIFECYCLE_OK' : gameplayProfile ? 'GAMEPLAY_PROFILE_OK' : hudReview ? 'HUD_REVIEW_OK' : wallReview ? 'WALL_REVIEW_OK' : benchmark ? 'RENDER_BENCHMARK_OK' : 'MAP_REVIEW_OK')));
