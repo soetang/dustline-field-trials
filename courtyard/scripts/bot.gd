@@ -110,6 +110,17 @@ func hear(at: Vector3) -> void:
 		last_seen = at
 		heard = 2.0
 
+func path_look_goal() -> Vector3:
+	if path.is_empty(): return look_goal
+	# Anticipate the route only as far as this corridor actually opens. Blindly
+	# looking at the fourth waypoint faces a wall before a tight corner, while
+	# movement still follows the first leg. Bound checks to three per think().
+	var ahead := mini(3, path.size() - 1)
+	while ahead > 0:
+		if game.layout.segment_clear(position, path[ahead]): break
+		ahead -= 1
+	return path[ahead] + Vector3.UP * 1.4
+
 func think() -> void:
 	var closest := INF
 	var candidate: Node3D = null
@@ -164,7 +175,7 @@ func think() -> void:
 		stuck_time = 0.0
 		replans += 1
 	if target == null and memory <= 0 and heard <= 0 and not path.is_empty():
-		look_goal = path[mini(3, path.size() - 1)] + Vector3.UP * 1.4
+		look_goal = path_look_goal()
 	elif target == null and memory <= 0 and heard <= 0 and (team == 0 or game.bomb_active):
 		look_goal = guard_look
 
