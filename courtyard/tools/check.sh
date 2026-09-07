@@ -12,6 +12,7 @@ suites=(
   'query_reuse|gd|QUERY_REUSE|60|test|-|query-reuse'
   'room_lookup|gd|ROOM_LOOKUP|60|test|-|room-lookup'
   'navigation_clearance|gd|NAVIGATION_CLEARANCE|-|test|-|navigation-clearance'
+  'function_benchmark|gd|FUNCTION_BENCHMARK|-|-|-|function-benchmark'
   'bot_navigation|gd|BOT_NAVIGATION|60|test|-|bot-navigation'
   'cpu_profile_check|gd|CPU_PROFILE|-|test|-|cpu-profile'
   'shot_effects|gd|SHOT_EFFECTS|-|test|-|shot-effects'

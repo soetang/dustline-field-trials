@@ -58,6 +58,7 @@ const CLEARANCE_SCALE := 2
 const CLEARANCE_MARGIN := 0.0001 # outward cushion for float transforms/edges
 static var _clearance_lookup_ready := false
 static var _clearance_cells := PackedByteArray() # 0=mixed, 1=clear, 2=blocked
+static var _segment_prefix := PackedInt32Array()
 var nav := AStarGrid2D.new()
 
 func _init() -> void:
@@ -71,6 +72,9 @@ func _init() -> void:
 	for x in range(BOUNDS.position.x, BOUNDS.end.x):
 		for z in range(BOUNDS.position.y, BOUNDS.end.y):
 			nav.set_point_solid(Vector2i(x, z), not clear(Vector2(x + 0.5, z + 0.5), NAV_RADIUS))
+	# Pay this once during navigation startup, before any live bot frame.
+	if _segment_prefix.is_empty() and not _clearance_cells.is_empty():
+		_segment_prefix = _build_segment_prefix(_clearance_cells)
 
 static func floor_height(p: Vector2) -> float:
 	var south := 1.6 * clampf((p.y - 14.0) / 14.0, 0.0, 1.0)
@@ -159,6 +163,7 @@ static func _room_region_state(region: Rect2) -> int:
 	return 1 if filled else 2
 
 static func _build_clearance_lookup() -> PackedByteArray:
+	_segment_prefix = PackedInt32Array()
 	if not _room_lookup_ready:
 		_room_cells = _build_room_lookup(ROOMS, BOUNDS)
 		_room_lookup_ready = true
@@ -195,6 +200,40 @@ static func _build_clearance_lookup() -> PackedByteArray:
 					break
 			if clear_tile: result[y * width + x] = 1
 	return result
+
+static func _build_segment_prefix(cells: PackedByteArray) -> PackedInt32Array:
+	# Count cells which cannot prove clearance. Four prefix reads can certify
+	# a whole rectangle, independently of its size or the segment sample count.
+	var width := BOUNDS.size.x * CLEARANCE_SCALE
+	var height := BOUNDS.size.y * CLEARANCE_SCALE
+	var result := PackedInt32Array()
+	if cells.size() != width * height: return result
+	result.resize((width + 1) * (height + 1))
+	for y in height:
+		var row := 0
+		for x in width:
+			row += int(cells[y * width + x] != 1)
+			result[(y + 1) * (width + 1) + x + 1] = result[y * (width + 1) + x + 1] + row
+	return result
+
+static func _segment_region_clear(from: Vector2, to: Vector2) -> bool:
+	if not from.is_finite() or not to.is_finite(): return false
+	if not _clearance_lookup_ready: clear(from, NAV_RADIUS)
+	if _clearance_cells.is_empty(): return false
+	# Within these map bounds, 0.0001 m exceeds float32 lerp/subtraction error.
+	# Include both rectangle ends and their neighbouring cells conservatively;
+	# every original sample must remain inside the certified rectangle.
+	var low := from.min(to) - Vector2.ONE * CLEARANCE_MARGIN
+	var high := from.max(to) + Vector2.ONE * CLEARANCE_MARGIN
+	if not Rect2(BOUNDS).has_point(low) or not Rect2(BOUNDS).has_point(high): return false
+	if _segment_prefix.is_empty(): _segment_prefix = _build_segment_prefix(_clearance_cells)
+	var x0 := floori((low.x - BOUNDS.position.x) * CLEARANCE_SCALE)
+	var y0 := floori((low.y - BOUNDS.position.y) * CLEARANCE_SCALE)
+	var x1 := floori((high.x - BOUNDS.position.x) * CLEARANCE_SCALE) + 1
+	var y1 := floori((high.y - BOUNDS.position.y) * CLEARANCE_SCALE) + 1
+	var stride := BOUNDS.size.x * CLEARANCE_SCALE + 1
+	return _segment_prefix[y1 * stride + x1] - _segment_prefix[y0 * stride + x1] \
+			- _segment_prefix[y1 * stride + x0] + _segment_prefix[y0 * stride + x0] == 0
 
 static func door_rect(door: Dictionary) -> Rect2:
 	return Rect2(minf(0,door.side*door.width),-0.15,door.width,0.30)
@@ -235,7 +274,12 @@ func segment_clear(a: Vector3, b: Vector3) -> bool:
 	var from := Vector2(a.x, a.z)
 	var to := Vector2(b.x, b.z)
 	var count := maxi(1, ceili(from.distance_to(to) / 0.22))
-	for i in range(count + 1):
+	# Test the same endpoint samples first: either blocked endpoint already
+	# proves failure. Preserve lerp rounding rather than substituting `to`.
+	if not clear(from.lerp(to, 0.0), NAV_RADIUS): return false
+	if not clear(from.lerp(to, 1.0), NAV_RADIUS): return false
+	if count == 1 or _segment_region_clear(from, to): return true
+	for i in range(1, count):
 		if not clear(from.lerp(to, float(i) / count), NAV_RADIUS):
 			return false
 	return true
