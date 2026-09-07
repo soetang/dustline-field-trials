@@ -6,7 +6,7 @@ on:
         description: 'Map/wall screenshots or CPU/GPU-fixture check; not hardware FPS'
         type: choice
         default: map
-        options: [map, walls, crates, operators, operator-motion, death-motion, hud, surfaces, cpu, gpu, reported-view, engine]
+        options: [map, walls, crates, operators, operator-motion, death-motion, hud, surfaces, cpu, gpu, reported-view, engine, depth-copy]
 permissions:
   contents: read
 concurrency:
@@ -63,6 +63,10 @@ jobs:
               node courtyard/tests/compare-operator-reviews.js
               ;;
             death-motion) node courtyard/tests/map-review-browser.js --death-review ;;
+            depth-copy)
+              node courtyard/tests/depth-copy-review-check.js
+              node courtyard/tests/map-review-browser.js --depth-copy-review --capture
+              ;;
             engine) node courtyard/tests/map-review-browser.js --engine-lifecycle --capture ;;
             cpu) node courtyard/tests/map-review-browser.js --gameplay-profile --profile-steady --duration=3 --warmup=3 --width=640 --height=360 ;;
             reported-view)

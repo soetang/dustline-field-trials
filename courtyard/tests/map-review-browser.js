@@ -20,6 +20,11 @@ const { launchBrowser } = require('../../scripts/browser-options');
   assert.ok(!reportedView || (benchmark && !process.argv.some(arg=>/^--(compare|quality=|diagnostic-no-shadows|batch-cell=|color-batching|no-color-batching|simple-crates|splits=|shadow-distance=|engine-template=|operator-surface|flat-surface|ssao-unroll|presentation-cache|width=|height=)/.test(arg))),
     'Reported-view benchmark preserves the official engine, reported dimensions and unchanged High graphics');
   const engineLifecycle = process.argv.includes('--engine-lifecycle');
+  const depthCopyReview = process.argv.includes('--depth-copy-review');
+  const expectDepthCopyRemoved = process.argv.includes('--expect-ssao-depth-copy-removed');
+  if (depthCopyReview) assert.ok(process.argv.slice(2).every(arg=>
+    ['--depth-copy-review','--expect-ssao-depth-copy-removed','--capture'].includes(arg) || /^--engine-template=.+\.zip$/.test(arg)),
+    'Depth-copy review uses only the fixed correctness matrix and an optional matched engine template');
   const expectCachedBackbuffer = process.argv.includes('--expect-cached-backbuffer');
   const wallReview = process.argv.includes('--wall-review');
   const operatorMotion = process.argv.includes('--operator-motion');
@@ -56,8 +61,8 @@ const { launchBrowser } = require('../../scripts/browser-options');
   assert.ok(!presentationCache || ((benchmark || engineLifecycle) && !presentationAbba),'Fixed presentation cache is only available in render/engine fixtures');
   assert.ok(!gpuTiming || ((benchmark || gameplayProfile) && !presentationAbba && !navigationAbba),
     'GPU timing requires an isolated benchmark or gameplay profile without other experiments');
-  assert.ok([benchmark,wallReview,hudReview,gameplayProfile,engineLifecycle,deathReview].filter(Boolean).length <= 1,'Choose one review/profile mode');
-  const longFixture = benchmark || wallReview || hudReview || gameplayProfile || engineLifecycle || deathReview;
+  assert.ok([benchmark,wallReview,hudReview,gameplayProfile,engineLifecycle,deathReview,depthCopyReview].filter(Boolean).length <= 1,'Choose one review/profile mode');
+  const longFixture = benchmark || wallReview || hudReview || gameplayProfile || engineLifecycle || deathReview || depthCopyReview;
   const windowsRenderOnly = process.argv.includes('--windows-render-only');
   const steadyProfile = process.argv.includes('--profile-steady');
   assert.ok(!steadyProfile || ((benchmark || gameplayProfile) && !process.argv.includes('--profile')),
@@ -70,8 +75,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
   let release = path.join(project, 'builds/web-releases', candidate);
   const engineTemplateArg=process.argv.find(arg=>arg.startsWith('--engine-template='))?.slice('--engine-template='.length);
   const engineTemplate=engineTemplateArg && path.resolve(engineTemplateArg);
-  assert.ok(!engineTemplate || ((benchmark || engineLifecycle) && engineTemplate.endsWith('.zip') && fs.statSync(engineTemplate).isFile()),
+  assert.ok(!engineTemplate || ((benchmark || engineLifecycle || depthCopyReview) && engineTemplate.endsWith('.zip') && fs.statSync(engineTemplate).isFile()),
     'Custom engine templates are allowed only in isolated render/engine fixtures');
+  assert.ok(!expectDepthCopyRemoved || (depthCopyReview && engineTemplate),'Depth-copy expectation requires an isolated custom engine review');
   assert.ok(!expectCachedBackbuffer || (engineLifecycle && engineTemplate),'Cached-backbuffer expectation requires a custom engine lifecycle fixture');
   const artifacts = fs.mkdtempSync(path.resolve(project, '../artifacts/map-review-browser-'));
   const reviewProject = path.join(artifacts,'project');
@@ -173,7 +179,7 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (gpuTiming) fs.copyFileSync(path.join(__dirname,'gpu_profile.gd'),path.join(reviewProject,'_gpu_profile.gd'));
   // Mechanical SceneTree-to-Node adapter: both runners execute the same poses
   // and capture code, but an exported game needs a normal main scene.
-  let reviewScript = fs.readFileSync(path.join(__dirname,deathReview ? 'death_review.gd' : engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : hudReview ? 'hud_review.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
+  let reviewScript = fs.readFileSync(path.join(__dirname,depthCopyReview ? 'depth_copy_review.gd' : deathReview ? 'death_review.gd' : engineLifecycle ? 'engine_lifecycle.gd' : gameplayProfile ? 'gameplay_profile.gd' : hudReview ? 'hud_review.gd' : wallReview ? 'wall_review.gd' : benchmark ? 'render_benchmark.gd' : 'map_review.gd'),'utf8')
     .replace('extends SceneTree','extends Node').replace('func _initialize()','func _ready()')
     .replaceAll('await process_frame','await get_tree().process_frame')
     .replaceAll('await physics_frame','await get_tree().physics_frame')
@@ -225,11 +231,12 @@ const { launchBrowser } = require('../../scripts/browser-options');
   if (presentationAbba) args.push('--presentation-abba');
   if (gpuTiming) args.push('--gpu-timing');
   if (expectCachedBackbuffer) args.push('--expect-cached-backbuffer');
+  if (expectDepthCopyRemoved) args.push('--expect-ssao-depth-copy-removed');
   for (const arg of process.argv.slice(2))
     if (/^--(samples|warmup|width|height|splits|shadow-distance|quality|duration)=\d+$/.test(arg)) args.push(arg);
   const dimension = (name,fallback) => Number(args.find(arg=>arg.startsWith(`--${name}=`))?.split('=')[1] || fallback);
-  const width = benchmark || gameplayProfile || engineLifecycle ? dimension('width',gameplayProfile ? 1280 : 640) : 960;
-  const height = benchmark || gameplayProfile || engineLifecycle ? dimension('height',gameplayProfile ? 720 : 360) : wallReview ? 441 : 540;
+  const width = benchmark || gameplayProfile || engineLifecycle || depthCopyReview ? dimension('width',gameplayProfile ? 1280 : 640) : 960;
+  const height = benchmark || gameplayProfile || engineLifecycle || depthCopyReview ? dimension('height',gameplayProfile ? 720 : 360) : wallReview ? 441 : 540;
   const html = `<!doctype html><html><body style="margin:0"><canvas id="canvas" width="${width}" height="${height}"></canvas>
     <script src="index.js"></script><script>
       window.mapReviewCaptures=[];
@@ -256,14 +263,14 @@ const { launchBrowser } = require('../../scripts/browser-options');
   try {
     browser = windowsRenderOnly ? await require('../../scripts/windows-browser')(chromium,{highPerformanceGPU:process.argv.includes('--high-performance-gpu')}) : await launchBrowser(chromium);
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
-    if (operatorMotion || deathReview) {
+    if (operatorMotion || deathReview || depthCopyReview) {
       const partial=new Map();
       await page.exposeFunction('saveMotionCapture',capture=>{
         assert.match(capture.name,/^[a-z0-9-]+$/);
         fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
         const {png,...data}=capture;
         partial.set(capture.name,data);
-        fs.writeFileSync(path.join(artifacts,deathReview ? 'death-review-captures.json' : 'motion-review.json'),JSON.stringify([...partial.values()],null,2)+'\n');
+        fs.writeFileSync(path.join(artifacts,depthCopyReview ? 'depth-copy-captures.json' : deathReview ? 'death-review-captures.json' : 'motion-review.json'),JSON.stringify([...partial.values()],null,2)+'\n');
       });
     }
     if (ssaoUnroll) {
@@ -276,9 +283,9 @@ const { launchBrowser } = require('../../scripts/browser-options');
       await page.addInitScript({content:source+(presentationCache ? '\nwindow.presentationStateCache.setEnabled(true);' : '')});
     }
     if (gpuTiming) await page.addInitScript({path:path.join(project,'engine/experiments/gpu-timer-probe.js')});
-    if (engineLifecycle) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
+    if (engineLifecycle || depthCopyReview) await page.addInitScript({path:path.join(project,'engine/experiments/backbuffer-gl-audit.js')});
     if (hudReview) await page.addInitScript({path:path.join(__dirname,'hud-buffer-probe.js')});
-    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView || deathReview) {
+    if (windowsRenderOnly || hudReview || wallReview || gameplayProfile || reportedView || deathReview || depthCopyReview) {
       // Separate headless profile, render-only: no host-input opt-in, no UI
       // actions. Immutable denial installed before any engine code can run.
       await page.addInitScript(() => {
@@ -334,6 +341,23 @@ const { launchBrowser } = require('../../scripts/browser-options');
       console.log('CPU sampling profile saved (includes startup, warmup and captures):',path.join(artifacts,'render.cpuprofile'));
     }
     const captures = await page.evaluate(() => window.mapReviewCaptures);
+    if (depthCopyReview) {
+      for (const capture of captures) {
+        assert.match(capture.name,/^[a-z0-9-]+$/);
+        fs.writeFileSync(path.join(artifacts,capture.name+'.png'),Buffer.from(capture.png,'base64'));
+      }
+      const review={candidate,engine,depth_copy_review:true,expected_patch:expectDepthCopyRemoved,staged:true,args,
+        summary:await page.evaluate(() => window.depthCopyReviewSummary),captures:captures.map(({png,...data})=>data)};
+      fs.writeFileSync(path.join(artifacts,'captures.json'),JSON.stringify(review,null,2)+'\n');
+      const {PNG}=require('playwright-core/lib/utilsBundle');
+      const report=require('./depth-copy-review').validateReview(review,capture=>PNG.sync.read(fs.readFileSync(path.join(artifacts,capture.name+'.png'))));
+      fs.writeFileSync(path.join(artifacts,'depth-copy-validation.json'),JSON.stringify(report,null,2)+'\n');
+      assert.equal(await page.evaluate(() => window.mapReviewExit),undefined,'Review remains alive for inspection');
+      assert.deepEqual(failures,[]);
+      assert.ok(logs.some(line=>line.includes('DEPTH_COPY_REVIEW_OK')),'Complete native depth-copy fixture');
+      console.log('PASS: isolated depth-copy image/call correctness matrix; not performance evidence. Artifacts:',artifacts);
+      return;
+    }
     if (deathReview) {
       // Evidence is durable before any validator/encoder can reject the run.
       // This branch intentionally never enters the old operator validators.
